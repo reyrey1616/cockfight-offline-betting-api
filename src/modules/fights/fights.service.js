@@ -137,7 +137,8 @@ export async function createFight(prisma) {
         orderBy: { fightNumber: 'desc' },
         select: { fightNumber: true }
       })
-      const nextNumber = (last?.fightNumber ?? 1000) + 1
+      // Empty table (e.g. after session reset) → fight #1. Otherwise MAX + 1.
+      const nextNumber = (last?.fightNumber ?? 0) + 1
 
       return tx.fight.create({
         data: {

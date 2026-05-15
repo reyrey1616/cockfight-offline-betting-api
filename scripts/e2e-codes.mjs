@@ -147,7 +147,7 @@ async function main() {
   // Advance some cash
   r = await api('POST', '/cash/advances', {
     token: adminToken,
-    body: { tellerId: teller.id, collectorId: newCollector.id, amount: 1000 }
+    body: { tellerId: teller.id, collectorId: newCollector.id, amount: 1000, password: 'admin2026@' }
   })
   assert(r.status === 201, `Advance → 201 (got ${r.status})`)
   const advCode = r.data.ledgerEntry.code
@@ -159,7 +159,7 @@ async function main() {
   // Remit it back
   r = await api('POST', '/cash/remits', {
     token: tellerToken,
-    body: { collectorId: newCollector.id, amount: 1000 }
+    body: { collectorId: newCollector.id, amount: 1000, password: 'teller12345' }
   })
   assert(r.status === 201, `Remit → 201 (got ${r.status})`)
   const remCode = r.data.ledgerEntry.code
@@ -189,7 +189,7 @@ async function main() {
     // Make an advance to the OTHER teller, capture its code
     const advForOther = await api('POST', '/cash/advances', {
       token: adminToken,
-      body: { tellerId: otherTeller.id, collectorId: newCollector.id, amount: 50 }
+      body: { tellerId: otherTeller.id, collectorId: newCollector.id, amount: 50, password: 'admin2026@' }
     })
     if (advForOther.status === 201) {
       const otherCode = advForOther.data.ledgerEntry.code
@@ -252,7 +252,7 @@ async function main() {
     // Top up teller so the bet is allowed
     await api('POST', '/cash/advances', {
       token: adminToken,
-      body: { tellerId: teller.id, collectorId: newCollector.id, amount: 100 }
+      body: { tellerId: teller.id, collectorId: newCollector.id, amount: 100, password: 'admin2026@' }
     })
     const placeR = await api('POST', '/bets', {
       token: tellerToken,

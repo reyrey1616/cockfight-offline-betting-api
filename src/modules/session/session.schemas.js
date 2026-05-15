@@ -32,6 +32,11 @@ const sessionResetSchema = {
     fightCount: { type: 'integer', minimum: 0 },
     betCount: { type: 'integer', minimum: 0 },
     ledgerCount: { type: 'integer', minimum: 0 },
+    collectorCashCount: {
+      type: ['integer', 'null'],
+      minimum: 0,
+      description: 'CASH_ADVANCE + REMIT rows wiped. Null on audit rows before this field existed.'
+    },
     notes: { type: ['string', 'null'] },
     forced: { type: 'boolean' }
   }
@@ -48,11 +53,20 @@ export const sessionPreviewResponseSchema = {
     properties: {
       counts: {
         type: 'object',
-        required: ['fights', 'bets', 'ledger'],
+        required: ['fights', 'bets', 'ledger', 'collectorCash'],
         properties: {
           fights: { type: 'integer', minimum: 0 },
           bets: { type: 'integer', minimum: 0 },
-          ledger: { type: 'integer', minimum: 0 }
+          ledger: {
+            type: 'integer',
+            minimum: 0,
+            description: 'All teller ledger rows (includes bet-linked rows).'
+          },
+          collectorCash: {
+            type: 'integer',
+            minimum: 0,
+            description: 'CASH_ADVANCE + REMIT rows only (collector deposits and remits).'
+          }
         }
       },
       invariants: {

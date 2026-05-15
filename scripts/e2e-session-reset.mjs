@@ -239,7 +239,8 @@ async function main() {
         .data.users.find(u => u.username === tellerUser).id,
       collectorId: collector.id,
       amount: '500.00',
-      notes: 'session-reset E2E setup'
+      notes: 'session-reset E2E setup',
+      password: ADMIN_PASSWORD
     }
   })
   assert(r.status === 201, `Cash advance to teller → 201 (got ${r.status} ${JSON.stringify(r.data).slice(0,200)})`)
@@ -435,10 +436,8 @@ async function main() {
   r = await api('POST', '/fights', { token: adminToken, body: {} })
   assert(r.status === 201, `Can create a fresh fight after wipe → 201 (got ${r.status})`)
   const newFight = r.data?.fight ?? r.data
-  // Fight numbering starts at 1001 by design (see fights.service.js: the
-  // MAX+1 fallback is `1000 + 1` so an empty session begins at #1001).
-  assert(newFight?.fightNumber === 1001,
-    `New fight starts at fightNumber=1001 after wipe (got ${newFight?.fightNumber})`)
+  assert(newFight?.fightNumber === 1,
+    `New fight starts at fightNumber=1 after wipe (got ${newFight?.fightNumber})`)
 
   // Clean up: settle/cancel the test fight so we leave the DB tidy.
   r = await api('POST', `/fights/${newFight.id}/cancel`, { token: adminToken, body: {} })

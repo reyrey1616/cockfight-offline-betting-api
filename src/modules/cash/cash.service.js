@@ -27,6 +27,8 @@ import {
 } from '../../lib/errors.js'
 import { computeTellerBalance } from '../../lib/teller-balance.js'
 import { generateUniqueCode } from '../../lib/code-generator.js'
+import { verifyUserPassword } from '../auth/auth.service.js'
+import { negate, resolveAdvanceRecipientId, toMoneyString } from './cash.helpers.js'
 
 // Prefix → ledger-row barcode mapping. Only CASH_ADVANCE and REMIT rows
 // get standalone codes; bet-related rows already have a printable code
@@ -65,27 +67,6 @@ const TX_MAX_WAIT_MS = 2_000
 // ===========================================================================
 // Shared helpers (private)
 // ===========================================================================
-
-// Convert a JS number → 2-decimal STRING for the DB. Rejects values that
-// the schema layer should already have caught — defense in depth so a
-// service caller can't bypass the route validation.
-function toMoneyString(amount) {
-  if (typeof amount !== 'number' || !Number.isFinite(amount)) {
-    throw new BadRequestError('amount must be a finite number')
-  }
-  const cents = Math.round(amount * 100)
-  if (Math.abs(amount * 100 - cents) > 1e-6) {
-    throw new BadRequestError('amount must have at most 2 decimal places')
-  }
-  return (cents / 100).toFixed(2)
-}
-
-// Negate a 2-decimal string. "500.00" → "-500.00".
-function negate(amountString) {
-  return amountString.startsWith('-')
-    ? amountString.slice(1)
-    : `-${amountString}`
-}
 
 // Map Prisma transaction-timeout to our 408. Same pattern used by every
 // other mutating service in the codebase.
@@ -131,7 +112,10 @@ async function findActiveCollector(prismaOrTx, collectorId) {
 // be active. Returns the created row + the recipient's NEW balance.
 // ===========================================================================
 
-export async function cashAdvance(prisma, { tellerId, collectorId, amount, notes }) {
+export async function cashAdvance(prisma, actor, { tellerId, collectorId, amount, notes, password }) {
+  await verifyUserPassword(prisma, actor.id, password)
+
+  const recipientId = resolveAdvanceRecipientId(actor, tellerId)
   const amountString = toMoneyString(amount)
 
   // Pre-validate outside the transaction so we don't waste a tx slot on
@@ -140,7 +124,7 @@ export async function cashAdvance(prisma, { tellerId, collectorId, amount, notes
   // and the insert is a vanishingly rare race; if it happens, the
   // CASH_ADVANCE for an in-the-process-of-being-deactivated teller is
   // not a meaningful inconsistency.
-  const teller = await findActiveTeller(prisma, tellerId)
+  const teller = await findActiveTeller(prisma, recipientId)
   await findActiveCollector(prisma, collectorId)
 
   let result
@@ -153,7 +137,7 @@ export async function cashAdvance(prisma, { tellerId, collectorId, amount, notes
       const code = await generateLedgerCode(tx, 'CASH_ADVANCE')
       const ledgerEntry = await tx.tellerLedger.create({
         data: {
-          tellerId,
+          tellerId: recipientId,
           type: 'CASH_ADVANCE',
           amount: amountString,
           collectorId,
@@ -161,7 +145,7 @@ export async function cashAdvance(prisma, { tellerId, collectorId, amount, notes
           notes: notes ?? null
         }
       })
-      const balance = await computeTellerBalance(tx, tellerId)
+      const balance = await computeTellerBalance(tx, recipientId)
       return { ledgerEntry, balance }
     }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
   } catch (err) {
@@ -183,7 +167,9 @@ export async function cashAdvance(prisma, { tellerId, collectorId, amount, notes
 // balance after the write — see header note on the post-write SUM check.
 // ===========================================================================
 
-export async function cashRemit(prisma, actor, { collectorId, amount, notes }) {
+export async function cashRemit(prisma, actor, { collectorId, amount, notes, password }) {
+  await verifyUserPassword(prisma, actor.id, password)
+
   const amountString = toMoneyString(amount)
   await findActiveCollector(prisma, collectorId)
 

@@ -27,6 +27,8 @@ model SessionReset {
   fightCount  Int
   betCount    Int
   ledgerCount Int
+  // CASH_ADVANCE + REMIT rows only (collector deposits and remits).
+  collectorCashCount Int?
 
   // Free-text operator note (e.g. "End of Friday night session").
   // Optional — there's no business reason to enforce a non-empty string.

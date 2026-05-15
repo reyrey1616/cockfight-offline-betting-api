@@ -39,7 +39,6 @@ const tags = ['Cash']
 const security = [{ bearerAuth: [] }]
 
 export default async function cashRoutes(app) {
-  const adminOnly = [app.authenticate, app.requireRole('ADMIN')]
   const anyAuth = [app.authenticate]
 
   // -------------------------------------------------------------------------
@@ -48,13 +47,14 @@ export default async function cashRoutes(app) {
   app.post(
     '/advances',
     {
-      preHandler: adminOnly,
+      preHandler: anyAuth,
       schema: {
         tags,
-        summary: 'Record a cash advance from a collector to a teller',
+        summary: 'Record a cash deposit from a collector to a teller drawer',
         description:
-          'Admin-only. Inserts a `CASH_ADVANCE` (positive) ledger row on ' +
-          'the recipient teller. Validates that the recipient is an ' +
+          'Inserts a `CASH_ADVANCE` (positive) ledger row on the recipient teller. ' +
+          'ADMIN may pass `tellerId` for any active teller; TELLER records on their own drawer only. ' +
+          'Requires step-up `password` from the bearer. Validates that the recipient is an ' +
           'active TELLER (admins cannot receive advances) and that the ' +
           'collector is active.\n\n' +
           'Returns the new ledger row plus `actorBalance` — the ' +
@@ -79,6 +79,7 @@ export default async function cashRoutes(app) {
     async (request, reply) => {
       const { ledgerEntry, balance, teller } = await cashAdvance(
         request.server.prisma,
+        request.user,
         request.body
       )
       app.broadcast(buildTellerBalanceUpdatedPayload({
@@ -107,7 +108,7 @@ export default async function cashRoutes(app) {
         summary: 'Record a cash remit to a collector',
         description:
           'Records a `REMIT` (negative) ledger row on the requesting ' +
-          'user. Typically called by tellers at end of shift; admins can ' +
+          'user. Requires step-up `password`. Typically called by tellers at end of shift; admins can ' +
           'call it too if they have ledger entries on themselves to ' +
           'square up.\n\n' +
           '### Hard invariant: balance cannot go negative\n' +

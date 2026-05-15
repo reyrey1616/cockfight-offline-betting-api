@@ -164,7 +164,13 @@ async function main() {
   for (const t of [tellerA, tellerB]) {
     r = await api('POST', '/cash/advances', {
       token: adminToken,
-      body: { tellerId: t.id, collectorId: collector.id, amount: '5000.00', notes: 'commissions E2E float' }
+      body: {
+        tellerId: t.id,
+        collectorId: collector.id,
+        amount: '5000.00',
+        notes: 'commissions E2E float',
+        password: ADMIN_PASSWORD
+      }
     })
     if (r.status !== 201) throw new Error(`Advance to ${t.username} failed: ${JSON.stringify(r.data)}`)
   }

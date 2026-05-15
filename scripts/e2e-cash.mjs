@@ -154,7 +154,7 @@ async function main() {
   // ============================================================
   r = await api('POST', '/cash/advances', {
     token: adminToken,
-    body: { tellerId: teller.id, collectorId: collector.id, amount: 5000, notes: 'shift start' }
+    body: { tellerId: teller.id, collectorId: collector.id, amount: 5000, notes: 'shift start', password: 'admin2026@' }
   })
   assert(r.status === 201, `Advance → 201 (got ${r.status}, body=${JSON.stringify(r.data)})`)
   assert(r.data.actorBalance === '5000.00', `actorBalance = 5000.00 (got ${r.data.actorBalance})`)
@@ -259,7 +259,7 @@ async function main() {
   // ============================================================
   r = await api('POST', '/cash/remits', {
     token: tellerToken,
-    body: { collectorId: collector.id, amount: 5000, notes: 'shift end' }
+    body: { collectorId: collector.id, amount: 5000, notes: 'shift end', password: 'teller12345' }
   })
   assert(r.status === 201, `Remit → 201 (got ${r.status}, body=${JSON.stringify(r.data)})`)
   assert(r.data.actorBalance === '0.00', `actorBalance after remit = 0.00 (got ${r.data.actorBalance})`)
@@ -301,7 +301,7 @@ async function main() {
   // 1. Advance to admin → 400
   r = await api('POST', '/cash/advances', {
     token: adminToken,
-    body: { tellerId: adminUser.id, collectorId: collector.id, amount: 100 }
+    body: { tellerId: adminUser.id, collectorId: collector.id, amount: 100, password: 'admin2026@' }
   })
   assert(r.status === 400, `Advance to admin user → 400 (got ${r.status})`)
   assert(r.data?.error?.message?.includes('TELLER'), `Error mentions TELLER role requirement`)
@@ -309,22 +309,38 @@ async function main() {
   // 2. Advance to inactive teller → 400
   r = await api('POST', '/cash/advances', {
     token: adminToken,
-    body: { tellerId: inactiveTeller.id, collectorId: collector.id, amount: 100 }
+    body: { tellerId: inactiveTeller.id, collectorId: collector.id, amount: 100, password: 'admin2026@' }
   })
   assert(r.status === 400, `Advance to inactive teller → 400 (got ${r.status})`)
   assert(r.data?.error?.message?.toLowerCase().includes('not active'), `Error mentions "not active"`)
 
-  // 3. Advance with non-admin token → 403
+  // 3. Teller cannot deposit to another teller's drawer → 403
   r = await api('POST', '/cash/advances', {
     token: tellerToken,
-    body: { tellerId: teller2.id, collectorId: collector.id, amount: 100 }
+    body: { tellerId: teller2.id, collectorId: collector.id, amount: 100, password: 'teller12345' }
   })
-  assert(r.status === 403, `Teller calling advance → 403 (got ${r.status})`)
+  assert(r.status === 403, `Teller deposit to other drawer → 403 (got ${r.status})`)
+
+
+  // 3b. Teller self-deposit (no tellerId) → 201
+  r = await api('POST', '/cash/advances', {
+    token: teller2Token,
+    body: { collectorId: collector.id, amount: 300, password: 'teller12345' }
+  })
+  assert(r.status === 201, `Teller self-deposit → 201 (got ${r.status})`)
+  assert(r.data.actorBalance === '300.00', `teller2 balance after self-deposit = 300.00`)
+
+  // 3c. Wrong password on remit → 401
+  r = await api('POST', '/cash/remits', {
+    token: teller2Token,
+    body: { collectorId: collector.id, amount: 50, password: 'wrong-password' }
+  })
+  assert(r.status === 401, `Wrong remit password → 401 (got ${r.status})`)
 
   // 4. Over-remit → 409 with shortfall
   r = await api('POST', '/cash/remits', {
     token: tellerToken,
-    body: { collectorId: collector.id, amount: 100 }
+    body: { collectorId: collector.id, amount: 100, password: 'teller12345' }
   })
   assert(r.status === 409, `Over-remit (balance is 0, ask 100) → 409 (got ${r.status})`)
   assert(r.data?.error?.details?.shortfall === '100.00', `Shortfall details = 100.00 (got ${JSON.stringify(r.data?.error?.details)})`)
@@ -333,21 +349,21 @@ async function main() {
   // 5. Negative amount → 400 (schema)
   r = await api('POST', '/cash/advances', {
     token: adminToken,
-    body: { tellerId: teller.id, collectorId: collector.id, amount: -50 }
+    body: { tellerId: teller.id, collectorId: collector.id, amount: -50, password: 'admin2026@' }
   })
   assert(r.status === 400, `Negative amount → 400 (got ${r.status})`)
 
   // 6. Amount over 1M → 400
   r = await api('POST', '/cash/advances', {
     token: adminToken,
-    body: { tellerId: teller.id, collectorId: collector.id, amount: 1_000_001 }
+    body: { tellerId: teller.id, collectorId: collector.id, amount: 1_000_001, password: 'admin2026@' }
   })
   assert(r.status === 400, `Amount over 1M → 400 (got ${r.status})`)
 
   // 7. Amount with too many decimals → 400
   r = await api('POST', '/cash/advances', {
     token: adminToken,
-    body: { tellerId: teller.id, collectorId: collector.id, amount: 100.123 }
+    body: { tellerId: teller.id, collectorId: collector.id, amount: 100.123, password: 'admin2026@' }
   })
   assert(r.status === 400, `Amount with 3 decimals → 400 (got ${r.status})`)
 
@@ -378,14 +394,14 @@ async function main() {
   await api('PATCH', `/collectors/${tempCollector.id}`, { token: adminToken, body: { isActive: false } })
   r = await api('POST', '/cash/advances', {
     token: adminToken,
-    body: { tellerId: teller.id, collectorId: tempCollector.id, amount: 100 }
+    body: { tellerId: teller.id, collectorId: tempCollector.id, amount: 100, password: 'admin2026@' }
   })
   assert(r.status === 400, `Advance with inactive collector → 400 (got ${r.status})`)
 
   // 14. Verify response shape: bet.code populated, bet.tellerId == teller.id, etc.
   r = await api('POST', '/cash/advances', {
     token: adminToken,
-    body: { tellerId: teller.id, collectorId: collector.id, amount: 250.50 }
+    body: { tellerId: teller.id, collectorId: collector.id, amount: 250.50, password: 'admin2026@' }
   })
   assert(r.status === 201, 'Decimal amount 250.50 accepted')
   assert(r.data.actorBalance === '250.50', `Balance = 250.50 (got ${r.data.actorBalance})`)

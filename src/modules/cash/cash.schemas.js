@@ -59,10 +59,15 @@ const ledgerEntrySchema = {
 
 export const cashAdvanceRequestSchema = {
   type: 'object',
-  required: ['tellerId', 'collectorId', 'amount'],
+  required: ['collectorId', 'amount', 'password'],
   additionalProperties: false,
   properties: {
-    tellerId: { type: 'string', pattern: cuidPattern, description: 'Receiving teller — must be active and have role TELLER.' },
+    tellerId: {
+      type: 'string',
+      pattern: cuidPattern,
+      description:
+        'Receiving teller (ADMIN only). Tellers omit this — the deposit is always recorded on their own drawer.'
+    },
     collectorId: { type: 'string', pattern: cuidPattern, description: 'Collector handing the cash — must be active.' },
     amount: {
       type: 'number',
@@ -71,7 +76,14 @@ export const cashAdvanceRequestSchema = {
       multipleOf: 0.01,
       description: 'Positive amount (max 1,000,000) with at most 2 decimals.'
     },
-    notes: { type: 'string', maxLength: 200 }
+    notes: { type: 'string', maxLength: 200 },
+    password: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 200,
+      description:
+        'Step-up password for the bearer (admin recording an advance, or teller confirming a deposit to their drawer).'
+    }
   }
 }
 
@@ -92,7 +104,7 @@ export const cashAdvanceResponseSchema = {
 
 export const cashRemitRequestSchema = {
   type: 'object',
-  required: ['collectorId', 'amount'],
+  required: ['collectorId', 'amount', 'password'],
   additionalProperties: false,
   properties: {
     collectorId: { type: 'string', pattern: cuidPattern, description: 'Collector receiving the cash — must be active.' },
@@ -103,7 +115,13 @@ export const cashRemitRequestSchema = {
       multipleOf: 0.01,
       description: 'Positive amount being remitted (recorded as a negative on the ledger).'
     },
-    notes: { type: 'string', maxLength: 200 }
+    notes: { type: 'string', maxLength: 200 },
+    password: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 200,
+      description: 'Step-up password for the remitting teller (re-prove identity before cash leaves the drawer).'
+    }
   }
 }
 

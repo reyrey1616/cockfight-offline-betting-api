@@ -179,8 +179,16 @@ export async function previewReset(prisma) {
     Promise.all([
       prisma.fight.count(),
       prisma.bet.count(),
-      prisma.tellerLedger.count()
-    ]).then(([fights, bets, ledger]) => ({ fights, bets, ledger })),
+      prisma.tellerLedger.count(),
+      prisma.tellerLedger.count({
+        where: { type: { in: ['CASH_ADVANCE', 'REMIT'] } }
+      })
+    ]).then(([fights, bets, ledger, collectorCash]) => ({
+      fights,
+      bets,
+      ledger,
+      collectorCash
+    })),
     evaluateInvariants(prisma)
   ])
 
@@ -251,10 +259,13 @@ export async function performReset(prisma, actor, { confirm, password, notes, fo
       //    REPEATABLE READ would be ideal but the default READ COMMITTED
       //    is fine here because the upcoming TRUNCATE will lock all three
       //    tables anyway, blocking any concurrent writes.
-      const [fightCount, betCount, ledgerCount] = await Promise.all([
+      const [fightCount, betCount, ledgerCount, collectorCashCount] = await Promise.all([
         tx.fight.count(),
         tx.bet.count(),
-        tx.tellerLedger.count()
+        tx.tellerLedger.count(),
+        tx.tellerLedger.count({
+          where: { type: { in: ['CASH_ADVANCE', 'REMIT'] } }
+        })
       ])
 
       // 2. INSERT the audit row. This MUST come before the TRUNCATE —
@@ -268,6 +279,7 @@ export async function performReset(prisma, actor, { confirm, password, notes, fo
           fightCount,
           betCount,
           ledgerCount,
+          collectorCashCount,
           notes: notes ?? null,
           forced: Boolean(force)
         }
@@ -353,6 +365,7 @@ export function projectSessionReset(row) {
     fightCount: row.fightCount,
     betCount: row.betCount,
     ledgerCount: row.ledgerCount,
+    collectorCashCount: row.collectorCashCount ?? null,
     notes: row.notes ?? null,
     forced: row.forced
   }
