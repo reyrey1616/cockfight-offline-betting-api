@@ -63,7 +63,15 @@ const fightSummarySchema = {
     meronPool: { type: 'string' },
     walaPool: { type: 'string' },
     meronOdds: { type: ['number', 'null'] },
-    walaOdds: { type: ['number', 'null'] }
+    walaOdds: { type: ['number', 'null'] },
+    payoutRatioMeron: {
+      type: ['string', 'null'],
+      description: 'Settled payout multiplier for Meron (null until fight is settled).'
+    },
+    payoutRatioWala: {
+      type: ['string', 'null'],
+      description: 'Settled payout multiplier for Wala (null until fight is settled).'
+    }
   }
 }
 

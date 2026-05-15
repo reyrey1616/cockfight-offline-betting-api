@@ -5,6 +5,7 @@
 // either all land or none land. This is the rule for a money system: there
 // is no acceptable middle state.
 
+import { evaluateBetVoidEligibility } from './bets.helpers.js'
 import { generateTicketCode } from '../../lib/ticket-code.js'
 import { computeLiveOdds } from '../../lib/odds.js'
 import { deriveInitials } from '../../lib/initials.js'
@@ -234,7 +235,11 @@ function projectFight(fight) {
     meronPool: fight.meronPool,
     walaPool: fight.walaPool,
     meronOdds,
-    walaOdds
+    walaOdds,
+    payoutRatioMeron:
+      fight.payoutRatioMeron != null ? String(fight.payoutRatioMeron) : null,
+    payoutRatioWala:
+      fight.payoutRatioWala != null ? String(fight.payoutRatioWala) : null
   }
 }
 
@@ -389,17 +394,15 @@ export async function voidBet(prisma, actor, betId, { reason } = {}) {
 
   // Cheap pre-check so we return a clean 409 without spending a transaction
   // budget on a doomed call. The transaction re-checks both anyway.
-  if (existing.fight.status !== 'OPEN') {
-    throw new ConflictError(
-      'Bets cannot be voided once the fight begins',
-      { fightStatus: existing.fight.status, betStatus: existing.status }
-    )
-  }
-  if (existing.status !== 'PENDING') {
-    throw new ConflictError(
-      'Only PENDING bets can be voided',
-      { betStatus: existing.status }
-    )
+  const eligibility = evaluateBetVoidEligibility({
+    betStatus: existing.status,
+    fightStatus: existing.fight.status
+  })
+  if (!eligibility.allowed) {
+    throw new ConflictError(eligibility.reason, {
+      fightStatus: existing.fight.status,
+      betStatus: existing.status
+    })
   }
 
   let result
@@ -423,11 +426,15 @@ export async function voidBet(prisma, actor, betId, { reason } = {}) {
       // 4. Re-validate fight status under the lock — the only correctness
       //    barrier that matters. If an admin called /fights/:id/close
       //    between the fast-path check and now, we MUST reject.
-      if (fight.status !== 'OPEN') {
-        throw new ConflictError(
-          'Bets cannot be voided once the fight begins',
-          { fightStatus: fight.status, betStatus: bet.status }
-        )
+      const lockedEligibility = evaluateBetVoidEligibility({
+        betStatus: bet.status,
+        fightStatus: fight.status
+      })
+      if (!lockedEligibility.allowed) {
+        throw new ConflictError(lockedEligibility.reason, {
+          fightStatus: fight.status,
+          betStatus: bet.status
+        })
       }
 
       // 5. Re-validate bet status. Handles concurrent voids cleanly.

@@ -8,7 +8,7 @@
     "start": "node src/server.js",
     "db:migrate": "prisma migrate deploy",
     "seed": "node prisma/seed.js",
-    "test": "node --test src/lib/*.test.js src/modules/cash/*.test.js"
+    "test": "node --test src/lib/*.test.js src/modules/cash/*.test.js src/modules/bets/*.test.js"
   },
   "keywords": [],
   "author": "",
