@@ -1,0 +1,71 @@
+enum TellerLedgerEntryType {
+  CASH_ADVANCE // collector hands cash to teller at session start (+)
+  BET_PLACED   // customer pays teller for a new bet (+)
+  BET_VOIDED   // teller refunds customer for a void (-)
+  BET_REFUNDED // teller refunds customer for cancelled / draw fight (-)
+  PAYOUT       // teller pays a winning ticket (-)
+  REMIT        // teller hands cash to collector (-)
+  ADJUSTMENT   // admin manual correction; sign depends on the situation
+}
+
+// Append-only running ledger of physical cash movements for each teller.
+// One row per movement. The teller's current cash balance is computed as
+// SUM(amount) WHERE tellerId = ?.
+//
+// Transactional guarantee (enforced at the service layer): every cash-
+// affecting operation MUST insert exactly one ledger row in the SAME
+// transaction as the originating change (bet create, payout, void, remit,
+// etc.). Never write to one without the other.
+//
+// Sign convention:
+//   POSITIVE amount = cash flowing INTO the teller's hand
+//   NEGATIVE amount = cash flowing OUT of the teller's hand
+//
+// tellerId reflects WHOSE HAND the cash is moving in/out of for this
+// specific event — not the teller who originally took the bet. A payout
+// made by a different teller debits THAT teller's balance, not the
+// original bet-taker's.
+//
+// Append-only: never UPDATE or DELETE existing rows. Corrections happen as
+// new ADJUSTMENT entries that net the prior mistake out.
+model TellerLedger {
+  id       String                @id @default(cuid())
+  tellerId String
+  type     TellerLedgerEntryType
+  amount   Decimal               @db.Decimal(14, 2)
+
+  // Public scannable barcode — populated ONLY for CASH_ADVANCE ("ADV…")
+  // and REMIT ("REM…") rows. Printed on the cash receipt so an admin
+  // can scan the slip later to look up the original transaction.
+  //
+  // Bet-related rows (BET_PLACED, BET_VOIDED, BET_REFUNDED, PAYOUT)
+  // already have a printable code via `bet.code`, so duplicating it
+  // onto the ledger row would be denormalization for no win.
+  // Adjustment rows don't exist (no manual adjustments) and would
+  // never be standalone-printed if they did.
+  code     String?               @unique
+
+  // Optional references — populated based on entry type:
+  // - BET_PLACED / BET_VOIDED / BET_REFUNDED / PAYOUT → betId
+  // - CASH_ADVANCE / REMIT                            → collectorId
+  // - ADJUSTMENT                                      → adjustedByUserId + notes
+  betId            String?
+  collectorId      String?
+  adjustedByUserId String?
+
+  // Free-text context. Required for ADJUSTMENT (enforced by service layer);
+  // optional for everything else (e.g. could note "partial remit", etc.).
+  notes String?
+
+  createdAt DateTime @default(now())
+
+  teller     User       @relation("TellerLedgerEntriesByTeller", fields: [tellerId], references: [id], onDelete: Restrict)
+  bet        Bet?       @relation(fields: [betId], references: [id], onDelete: Restrict)
+  collector  Collector? @relation(fields: [collectorId], references: [id], onDelete: Restrict)
+  adjustedBy User?      @relation("TellerLedgerEntriesByAdjuster", fields: [adjustedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tellerId, createdAt])
+  @@index([type, createdAt])
+  @@index([betId])
+  @@index([collectorId, createdAt])
+}

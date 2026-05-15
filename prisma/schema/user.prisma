@@ -1,0 +1,37 @@
+enum UserRole {
+  TELLER
+  ADMIN
+}
+
+model User {
+  id           String @id @default(cuid())
+  // Username is the single source of truth for the 3-char initials stamped
+  // onto Bet.code. We derive `initials` at runtime from the first 3 chars
+  // of username (uppercased) — see src/lib/initials.js. Username validation
+  // enforces that the first 3 chars are alphabetic so the derived stamp
+  // always looks like initials. There is no separate `initials` column.
+  username     String @unique
+  // Stored as plaintext (explicit project choice — not for production).
+  password String
+  fullName     String
+
+  role     UserRole @default(TELLER)
+  isActive Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  betsTaken       Bet[]   @relation("BetsTakenByTeller")
+  betsPaidOut     Bet[]   @relation("BetsPaidByUser")
+  betsVoided      Bet[]   @relation("BetsVoidedByUser")
+  fightsCorrected Fight[] @relation("FightsCorrectedByUser")
+  meronSidesHeld  Fight[] @relation("FightsMeronHeldByUser")
+  walaSidesHeld   Fight[] @relation("FightsWalaHeldByUser")
+
+  ledgerAsTeller   TellerLedger[] @relation("TellerLedgerEntriesByTeller")
+  ledgerAsAdjuster TellerLedger[] @relation("TellerLedgerEntriesByAdjuster")
+
+  sessionResets SessionReset[] @relation("SessionResetsByUser")
+
+  @@index([role, isActive])
+}

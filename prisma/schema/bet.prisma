@@ -1,0 +1,82 @@
+enum BetSide {
+  MERON
+  WALA
+}
+
+enum BetStatus {
+  PENDING  // placed, fight not yet settled
+  WON      // settled in favor of this ticket; awaiting redemption
+  LOST     // settled against this ticket
+  PAID     // winning ticket redeemed and paid out
+  VOIDED   // cancelled by teller/admin before settlement
+  REFUNDED // fight cancelled / draw / no-contest
+}
+
+model Bet {
+  id String @id @default(cuid())
+
+  // Public-facing ticket code printed for the customer.
+  // Format: {5 chars from reduced alphabet}{3 teller initials} = 8 chars.
+  // Reduced alphabet excludes 0, O, 1, I, L, 5, S, 2, Z to avoid ambiguity
+  // on handwritten/printed tickets. Generated server-side; on collision
+  // the service retries with a fresh random portion.
+  code String @unique @db.VarChar(8)
+
+  // Idempotency key supplied by the teller machine on bet placement.
+  // Guarantees a retried network request does not place the same bet twice.
+  clientRequestId String @unique
+
+  fightId  String
+  tellerId String
+
+  // Snapshots preserved for receipt reprinting even if the teller's user
+  // record is later edited or deactivated mid-session.
+  tellerNameSnapshot     String
+  tellerInitialsSnapshot String @db.VarChar(3)
+
+  amount Decimal   @db.Decimal(12, 2)
+  side   BetSide
+  status BetStatus @default(PENDING)
+
+  // Calculated and frozen at fight settlement. NULL for losing, voided,
+  // refunded, or still-pending bets.
+  payoutAmount Decimal? @db.Decimal(14, 2)
+
+  // Redemption tracking — set when a winning ticket is paid out.
+  paidAt       DateTime?
+  paidByUserId String?
+
+  // Void tracking — set when the bet is voided before settlement.
+  voidedAt       DateTime?
+  voidedByUserId String?
+  voidReason     String?
+
+  // -------------------------------------------------------------------------
+  // Fight-result correction snapshot. Populated only when an ADMIN corrects
+  // the parent fight's outcome and this bet's status / payout was rewritten
+  // as a result.
+  //
+  // Important: paidAt and paidByUserId are NEVER cleared by a correction —
+  // if the bet was already paid out under the wrong outcome, that physical
+  // payment is preserved as history. The "operator loss from corrections"
+  // report is: status = LOST AND paidAt IS NOT NULL AND previousPayoutAmount
+  // IS NOT NULL.
+  // -------------------------------------------------------------------------
+  previousStatus       BetStatus?
+  previousPayoutAmount Decimal?   @db.Decimal(14, 2)
+  correctedAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fight          Fight          @relation(fields: [fightId], references: [id], onDelete: Restrict)
+  teller         User           @relation("BetsTakenByTeller", fields: [tellerId], references: [id], onDelete: Restrict)
+  paidBy         User?          @relation("BetsPaidByUser", fields: [paidByUserId], references: [id], onDelete: Restrict)
+  voidedBy       User?          @relation("BetsVoidedByUser", fields: [voidedByUserId], references: [id], onDelete: Restrict)
+  ledgerEntries  TellerLedger[]
+
+  @@index([fightId, status])
+  @@index([tellerId, createdAt])
+  @@index([status, createdAt])
+  @@index([correctedAt])
+}

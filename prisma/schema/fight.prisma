@@ -1,0 +1,98 @@
+enum FightStatus {
+  // DEPRECATED. Retained only so legacy rows from before the "create-is-
+  // open" lifecycle change still parse. New fights skip this state — the
+  // POST /fights endpoint writes status=OPEN directly.
+  SCHEDULED
+  OPEN      // accepting bets
+  CLOSED    // betting closed, awaiting result
+  SETTLED   // result entered, payouts calculated
+  CANCELLED // fight cancelled, all bets refunded
+}
+
+enum FightOutcome {
+  MERON
+  WALA
+  DRAW       // refund all bets
+  CANCELLED  // refund all bets
+  NO_CONTEST // refund all bets
+}
+
+model Fight {
+  id          String      @id @default(cuid())
+  fightNumber Int         @unique
+  status      FightStatus @default(SCHEDULED)
+
+  // Snapshot of Setting.commissionRate at the moment this fight was created.
+  // Used at settlement; admin changes to the global rate after fight creation
+  // do NOT retroactively alter this fight's payouts.
+  commissionRate Decimal @db.Decimal(5, 4)
+
+  // Running totals, updated atomically inside the same transaction as each
+  // Bet placement / void. Settlement reads these directly instead of
+  // re-aggregating bet rows.
+  meronPool Decimal @default(0) @db.Decimal(14, 2)
+  walaPool  Decimal @default(0) @db.Decimal(14, 2)
+
+  // -------------------------------------------------------------------------
+  // Per-side bet acceptance toggle. Orthogonal to FightStatus — the fight
+  // can be OPEN overall while one side is paused to let the pool catch up
+  // (used to manage pari-mutuel imbalance and limit house exposure).
+  //
+  // Bet placement service MUST check BOTH conditions:
+  //   1. fight.status = OPEN
+  //   2. fight.<side>AcceptingBets = true
+  //
+  // Hold/unhold is an ADMIN-only operation, valid only while status = OPEN.
+  // -------------------------------------------------------------------------
+  meronAcceptingBets Boolean   @default(true)
+  meronHeldAt        DateTime?
+  meronHeldByUserId  String?
+
+  walaAcceptingBets Boolean   @default(true)
+  walaHeldAt        DateTime?
+  walaHeldByUserId  String?
+
+  // Populated only when status transitions to SETTLED.
+  outcome FightOutcome?
+
+  // Payout per 1.00 wagered, frozen at settlement time.
+  // Example: 1.85 means a winning 100 bet pays out 185.00 (includes stake).
+  payoutRatioMeron Decimal? @db.Decimal(10, 4)
+  payoutRatioWala  Decimal? @db.Decimal(10, 4)
+
+  openedAt    DateTime?
+  closedAt    DateTime?
+  settledAt   DateTime?
+  cancelledAt DateTime?
+
+  // -------------------------------------------------------------------------
+  // Result-correction snapshot. Populated only if an ADMIN overrides a
+  // previously declared outcome (e.g. wrong winner declared, then corrected).
+  //
+  // Lifecycle status stays SETTLED — these fields are the audit, not a
+  // separate state. Presence of correctedAt is the marker that this fight
+  // had its result modified.
+  //
+  // Limitation: only the most recent correction is preserved here. If a
+  // fight is corrected more than once in a session, intermediate values are
+  // overwritten. Promote to a separate FightCorrection table if multi-step
+  // history is ever required.
+  // -------------------------------------------------------------------------
+  previousOutcome          FightOutcome?
+  previousPayoutRatioMeron Decimal?      @db.Decimal(10, 4)
+  previousPayoutRatioWala  Decimal?      @db.Decimal(10, 4)
+  correctedAt              DateTime?
+  correctedByUserId        String?
+  correctionReason         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bets        Bet[]
+  correctedBy User? @relation("FightsCorrectedByUser", fields: [correctedByUserId], references: [id], onDelete: Restrict)
+  meronHeldBy User? @relation("FightsMeronHeldByUser", fields: [meronHeldByUserId], references: [id], onDelete: Restrict)
+  walaHeldBy  User? @relation("FightsWalaHeldByUser", fields: [walaHeldByUserId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([correctedAt])
+}

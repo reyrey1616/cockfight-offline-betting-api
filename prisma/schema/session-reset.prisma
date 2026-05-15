@@ -1,0 +1,42 @@
+// Permanent audit row for every session-reset operation.
+//
+// One row per `POST /session/reset` invocation. Survives every subsequent
+// reset — this is the *only* table whose history MUST persist across
+// session boundaries. Without it we'd have no way to answer the most
+// basic post-mortem question: "who wiped the books on which night, and
+// what did they wipe?"
+//
+// Counts are snapshotted from the to-be-truncated tables in the same
+// transaction as the TRUNCATE, so they accurately reflect what was
+// destroyed (not the state at some earlier preview).
+//
+// `forced` records whether the operator bypassed the pre-flight
+// invariants (`force: true` in the body). False is the safe default;
+// true means at least one of: an OPEN/CLOSED fight existed, an unpaid
+// WON bet existed, or a teller had a non-zero balance — and the admin
+// chose to wipe anyway. Any future audit / compliance review starts
+// here.
+model SessionReset {
+  id          String   @id @default(cuid())
+  performedAt DateTime @default(now())
+
+  performedByUserId String
+  performedBy       User @relation("SessionResetsByUser", fields: [performedByUserId], references: [id], onDelete: Restrict)
+
+  // Snapshot of how much data the wipe removed.
+  fightCount  Int
+  betCount    Int
+  ledgerCount Int
+
+  // Free-text operator note (e.g. "End of Friday night session").
+  // Optional — there's no business reason to enforce a non-empty string.
+  notes String?
+
+  // Whether the admin used `force: true` to bypass the pre-flight checks.
+  // Always false for clean resets; true means there was uncleared state
+  // at the moment of the wipe.
+  forced Boolean @default(false)
+
+  @@index([performedAt])
+  @@index([performedByUserId, performedAt])
+}

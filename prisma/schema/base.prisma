@@ -1,0 +1,15 @@
+// Generator and datasource — declared once for the whole multi-file schema.
+// All other *.prisma files in this folder are stitched together by Prisma
+// at validate / generate / migrate time. No imports needed; cross-file
+// model relations resolve automatically.
+
+generator client {
+  // The classic JS generator. Outputs to node_modules/@prisma/client by
+  // default; import via `import { PrismaClient } from '@prisma/client'`.
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Connection URL is configured in prisma.config.ts (Prisma 7+ requirement).
+}

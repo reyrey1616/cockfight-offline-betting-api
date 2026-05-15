@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json.schemastore.org/nodemon.json",
+  "watch": ["src", "prisma/seed.js"],
+  "ext": "js,mjs,json,prisma",
+  "ignore": ["node_modules", "scripts", "docs", "prisma/migrations", "**/*.test.js"]
+}

@@ -1,0 +1,17 @@
+// Singleton configuration model. By convention, this table holds exactly ONE
+// row, identified by the fixed id "singleton". The service layer must always
+// read/write via upsert with where: { id: "singleton" } — never plain insert.
+// Future adjustable values (max bet, void grace window, ticket retention,
+// printer settings, etc.) should be added here as additional columns rather
+// than as new tables.
+model Setting {
+  id String @id @default("singleton")
+
+  // House commission ("tong") taken from the losing pool before payout,
+  // stored as a fraction. Examples: 0.10 = 10%, 0.15 = 15%.
+  // The current value is snapshotted onto each Fight at fight creation,
+  // so changing it here only affects fights created after the change.
+  commissionRate Decimal @default(0.10) @db.Decimal(5, 4)
+
+  updatedAt DateTime @updatedAt
+}
