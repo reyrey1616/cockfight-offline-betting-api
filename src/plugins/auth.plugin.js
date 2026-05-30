@@ -27,7 +27,7 @@ async function authPlugin(app) {
   await app.register(jwt, {
     secret: process.env.JWT_SECRET,
     sign: {
-      expiresIn: process.env.JWT_EXPIRES_IN ?? '12h'
+      expiresIn: process.env.JWT_EXPIRES_IN ?? '30d'
     }
   })
 

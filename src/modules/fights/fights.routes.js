@@ -4,10 +4,12 @@
 //   POST   /fights                              admin    create → directly OPEN
 //   GET    /fights                              bearer   list
 //   GET    /fights/{id}                         bearer   detail
-//   POST   /fights/{id}/close                   admin    OPEN      → CLOSED
+//   POST   /fights/{id}/close                   admin    OPEN|LAST_CALL → CLOSED
+//   POST   /fights/{id}/last-call               admin    OPEN      → LAST_CALL
+//   POST   /fights/{id}/resume-open             admin    LAST_CALL → OPEN
 //   POST   /fights/{id}/reopen                  admin    CLOSED    → OPEN
 //   POST   /fights/{id}/settle                  admin    CLOSED    → SETTLED
-//   POST   /fights/{id}/cancel                  admin    OPEN|CLOSED → CANCELLED
+//   POST   /fights/{id}/cancel                  admin    OPEN|LAST_CALL|CLOSED → CANCELLED
 //   POST   /fights/{id}/correct                 admin    SETTLED   → SETTLED'
 //   POST   /fights/{id}/sides/{side}/hold       admin    side → not accepting
 //   POST   /fights/{id}/sides/{side}/unhold     admin    side → accepting
@@ -25,7 +27,9 @@ import {
   closeFight,
   correctFight,
   createFight,
+  resumeFightOpen,
   reopenFight,
+  setFightLastCall,
   getFight,
   holdSide,
   listFights,
@@ -132,8 +136,8 @@ export default async function fightsRoutes(app) {
         summary: 'List fights',
         description:
           'Returns fights in descending `fightNumber` order. Filters: ' +
-          '`status` (exact), `current=true` (only `SCHEDULED`, `OPEN`, ' +
-          '`CLOSED`). Cursor-based pagination — pass `nextCursor` from the ' +
+          '`status` (exact), `current=true` (only `OPEN`, `LAST_CALL`, and `CLOSED`). ' +
+          'Cursor-based pagination — pass `nextCursor` from the ' +
           'previous response as `cursor`.',
         operationId: 'fightsList',
         security,
@@ -216,6 +220,70 @@ export default async function fightsRoutes(app) {
   )
 
   // -------------------------------------------------------------------------
+  // POST /fights/:id/last-call — OPEN → LAST_CALL
+  // -------------------------------------------------------------------------
+  app.post(
+    '/:id/last-call',
+    {
+      preHandler: adminOnly,
+      schema: {
+        tags,
+        summary: 'Mark an OPEN fight as LAST_CALL',
+        operationId: 'fightsLastCall',
+        security,
+        params: fightIdParamsSchema,
+        response: {
+          ...fightActionResponses,
+          400: errorResponses[400],
+          401: errorResponses[401],
+          403: errorResponses[403],
+          404: errorResponses[404],
+          408: errorResponses[408],
+          409: errorResponses[409],
+          500: errorResponses[500]
+        }
+      }
+    },
+    async (request) => {
+      const { fight } = await setFightLastCall(request.server.prisma, request.params.id)
+      app.broadcast(buildFightOpenedPayload(fight))
+      return { fight }
+    }
+  )
+
+  // -------------------------------------------------------------------------
+  // POST /fights/:id/resume-open — LAST_CALL → OPEN
+  // -------------------------------------------------------------------------
+  app.post(
+    '/:id/resume-open',
+    {
+      preHandler: adminOnly,
+      schema: {
+        tags,
+        summary: 'Return a LAST_CALL fight to OPEN',
+        operationId: 'fightsResumeOpen',
+        security,
+        params: fightIdParamsSchema,
+        response: {
+          ...fightActionResponses,
+          400: errorResponses[400],
+          401: errorResponses[401],
+          403: errorResponses[403],
+          404: errorResponses[404],
+          408: errorResponses[408],
+          409: errorResponses[409],
+          500: errorResponses[500]
+        }
+      }
+    },
+    async (request) => {
+      const { fight } = await resumeFightOpen(request.server.prisma, request.params.id)
+      app.broadcast(buildFightOpenedPayload(fight))
+      return { fight }
+    }
+  )
+
+  // -------------------------------------------------------------------------
   // POST /fights/:id/reopen — CLOSED → OPEN
   // -------------------------------------------------------------------------
   app.post(
@@ -272,7 +340,7 @@ export default async function fightsRoutes(app) {
           '   - `MERON` / `WALA` outcome → bets on the winning side become ' +
           '`WON` with `payoutAmount = stake × ratio`; the others become ' +
           '`LOST`.\n' +
-          '   - `DRAW` / `NO_CONTEST` outcome → every PENDING bet becomes ' +
+          '   - `DRAW` outcome → every PENDING bet becomes ' +
           '`REFUNDED` with `payoutAmount = stake`, and a `BET_REFUNDED` ' +
           'ledger entry is appended on each original teller.\n' +
           '   - `VOIDED` bets are untouched.\n' +
@@ -307,7 +375,7 @@ export default async function fightsRoutes(app) {
       app.broadcast(buildFightSettledPayload(fight))
       // Realized commission has just changed: every bet on this fight
       // transitioned from PENDING → WON/LOST/PAID (MERON/WALA outcomes)
-      // or PENDING → REFUNDED (DRAW/NO_CONTEST). Either way the
+      // or PENDING → REFUNDED (DRAW). Either way the
       // per-teller commission leaderboard now differs — signal admin
       // dashboards to refetch /reports/teller-commissions.
       app.broadcast(buildTellerCommissionsUpdatedPayload({

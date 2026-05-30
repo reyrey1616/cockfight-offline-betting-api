@@ -241,12 +241,12 @@ async function wsPlugin(app) {
 }
 
 // Project the "what's the current fight?" snapshot for WELCOME frames.
-// Picks the OPEN fight if any, else the most recent fight by createdAt.
+// Picks OPEN/LAST_CALL first, else the most recent fight by createdAt.
 // Returns null when the table is empty (fresh install / post-reset).
 async function loadCurrentFightSnapshot(prisma) {
   const fight =
     (await prisma.fight.findFirst({
-      where: { status: 'OPEN' },
+      where: { status: { in: ['OPEN', 'LAST_CALL'] } },
       orderBy: { fightNumber: 'desc' }
     })) ||
     (await prisma.fight.findFirst({

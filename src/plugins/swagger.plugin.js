@@ -241,7 +241,7 @@ async function swaggerPlugin(app) {
           '## Auth\n' +
           'Stateful sessions are not used. Authenticated endpoints require an ' +
           '`Authorization: Bearer <jwt>` header. Obtain a JWT via `POST /auth/login`. ' +
-          'Tokens expire (configurable via `JWT_EXPIRES_IN`, default 12h).\n\n' +
+          'Tokens expire (configurable via `JWT_EXPIRES_IN`, default 30d).\n\n' +
           '## Error shape\n' +
           'Every non-2xx response is `{ "error": { "code", "message", "details?" } }` ' +
           '(see the **ErrorResponse** component). The HTTP status code is the ' +

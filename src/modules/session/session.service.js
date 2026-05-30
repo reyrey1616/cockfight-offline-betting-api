@@ -108,7 +108,7 @@ async function evaluateInvariants(prisma) {
     unpaidWinningBetsCount,
     nonZeroBalanceRows
   ] = await Promise.all([
-    prisma.fight.count({ where: { status: { in: ['OPEN', 'CLOSED'] } } }),
+    prisma.fight.count({ where: { status: { in: ['OPEN', 'LAST_CALL', 'CLOSED'] } } }),
     prisma.bet.count({ where: { status: 'WON' } }),
     // groupBy with HAVING — the most efficient way to find tellers with
     // a non-zero net balance without scanning the ledger row-by-row.

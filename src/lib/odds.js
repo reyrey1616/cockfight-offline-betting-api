@@ -5,23 +5,25 @@
 // here are a real-time projection so tellers see the pool drift while bets
 // pour in. They will keep moving until the fight is closed.
 //
-// Formula (sabong / pari-mutuel, includes stake):
+// Formula (pari-mutuel, includes stake in the multiplier):
 //
-//   payoutRatioForSide = 1 + ((opposingPool * (1 - commission)) / sideOwnPool)
+//   houseTake       = (meronPool + walaPool) * (commissionRate / 2)
+//   distributable   = totalPool - houseTake
+//   payoutForSide   = distributable / sideOwnPool
 //
-// Example: meronPool = 1000, walaPool = 800, commission = 0.10
-//   meronOdds = 1 + (800 * 0.90 / 1000) = 1 + 0.72 = 1.72
-//   walaOdds  = 1 + (1000 * 0.90 / 800) = 1 + 1.125 = 2.125
+// Example: meronPool = 1000, walaPool = 800, commissionRate = 0.10
+//   total = 1800, houseTake = 1800 * 0.05 = 90, distributable = 1710
+//   meronOdds = 1710 / 1000 = 1.71
+//   walaOdds  = 1710 / 800  = 2.1375 → floored to 2.13
 //
 // Edge cases:
 //   - If a side's pool is 0, its odds are returned as null (no bets exist on
 //     that side yet, so "what does 1 peso pay" is undefined).
-//   - If the opposing pool is 0, the side's odds are 1.00 — winners get only
-//     their stake back because no opposing money exists to pay them with.
+//   - If the opposing pool is 0, the lone side's odds are (1 - commission/2)
+//     because house take is still commission/2 of that side's pool.
 //
-// Rounding: live multipliers are rounded to 2 decimal places for display and
-// wire payloads — typical for retail betting UIs (stakes/payouts in currency
-// minor units; odds quoted to hundredths).
+// Rounding: floored to 2 decimal places so displayed odds never exceed payout
+// math (same rule as frozen settlement ratios).
 
 const ZERO = 0
 
@@ -37,8 +39,17 @@ function toNumber(decimalLike) {
   return Number(decimalLike)
 }
 
-function round2(n) {
-  return Math.round(n * 100) / 100
+function floor2(n) {
+  return Math.floor(n * 100) / 100
+}
+
+/** Pool left for winners after house take (commissionRate / 2 of total handle). */
+export function computePoolDistributable(meronPool, walaPool, commissionRate) {
+  const meron = toNumber(meronPool)
+  const wala = toNumber(walaPool)
+  const commission = toNumber(commissionRate)
+  const total = meron + wala
+  return total * (1 - commission / 2)
 }
 
 /**
@@ -49,14 +60,10 @@ export function computeLiveOdds(fight) {
   const meron = toNumber(fight.meronPool)
   const wala = toNumber(fight.walaPool)
   const commission = toNumber(fight.commissionRate)
-  const keepRate = 1 - commission
+  const distributable = computePoolDistributable(meron, wala, commission)
 
-  const meronOdds = meron > 0
-    ? round2(1 + (wala * keepRate) / meron)
-    : null
-  const walaOdds = wala > 0
-    ? round2(1 + (meron * keepRate) / wala)
-    : null
+  const meronOdds = meron > 0 ? floor2(distributable / meron) : null
+  const walaOdds = wala > 0 ? floor2(distributable / wala) : null
 
   return { meronOdds, walaOdds }
 }

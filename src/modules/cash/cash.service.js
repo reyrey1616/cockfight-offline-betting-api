@@ -27,6 +27,7 @@ import {
 } from '../../lib/errors.js'
 import { computeTellerBalance } from '../../lib/teller-balance.js'
 import { generateUniqueCode } from '../../lib/code-generator.js'
+import { rethrowPrismaTransactionError } from '../../lib/prisma-tx.js'
 import { verifyUserPassword } from '../auth/auth.service.js'
 import { negate, resolveAdvanceRecipientId, toMoneyString } from './cash.helpers.js'
 
@@ -70,13 +71,6 @@ const TX_MAX_WAIT_MS = 2_000
 
 // Map Prisma transaction-timeout to our 408. Same pattern used by every
 // other mutating service in the codebase.
-function rethrowFriendly(err) {
-  if (err?.code === 'P2028') {
-    throw new RequestTimeoutError('System busy, please retry')
-  }
-  throw err
-}
-
 async function findActiveTeller(prismaOrTx, tellerId) {
   const user = await prismaOrTx.user.findUnique({
     where: { id: tellerId },
@@ -149,7 +143,7 @@ export async function cashAdvance(prisma, actor, { tellerId, collectorId, amount
       return { ledgerEntry, balance }
     }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
   } catch (err) {
-    rethrowFriendly(err)
+    rethrowPrismaTransactionError(err)
   }
 
   return {
@@ -218,7 +212,7 @@ export async function cashRemit(prisma, actor, { collectorId, amount, notes, pas
       return { ledgerEntry, balance }
     }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
   } catch (err) {
-    rethrowFriendly(err)
+    rethrowPrismaTransactionError(err)
   }
 
   return {

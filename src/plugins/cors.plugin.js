@@ -75,6 +75,20 @@ function isPrivateLanIpv4(hostname) {
 }
 
 /**
+ * Packaged Electron kiosk serves the UI from http://127.0.0.1:<port>/kiosk
+ * (local static server). API calls are cross-origin to the LAN server :8000.
+ */
+function isElectronKioskShellOrigin(origin) {
+  try {
+    const u = new URL(origin)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false
+    return u.hostname === '127.0.0.1' || u.hostname === 'localhost'
+  } catch {
+    return false
+  }
+}
+
+/**
  * Vite dev server on LAN: e.g. http://192.168.1.10:5173 — same host the
  * browser used to load the SPA, different port than API (:8000).
  */
@@ -124,6 +138,7 @@ async function corsPlugin(app) {
     origin: (origin, cb) => {
       if (!origin) return cb(null, true)
       if (allowSet.has(origin)) return cb(null, true)
+      if (isElectronKioskShellOrigin(origin)) return cb(null, true)
       if (relaxLanVite && isLanViteDevOrigin(origin, vitePorts)) {
         return cb(null, true)
       }

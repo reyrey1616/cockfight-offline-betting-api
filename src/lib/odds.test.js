@@ -10,8 +10,18 @@ describe('computeLiveOdds', () => {
       walaPool: '800',
       commissionRate: '0.10'
     })
-    assert.equal(meronOdds, 1.72)
+    assert.equal(meronOdds, 1.71)
     assert.equal(walaOdds, 2.13)
+  })
+
+  it('matches pool distributable formula (commission/2 of total handle)', () => {
+    const { meronOdds, walaOdds } = computeLiveOdds({
+      meronPool: '13280',
+      walaPool: '10310',
+      commissionRate: '0.15'
+    })
+    assert.equal(meronOdds, 1.64)
+    assert.equal(walaOdds, 2.11)
   })
 
   it('returns null for a side with zero pool', () => {
@@ -21,7 +31,7 @@ describe('computeLiveOdds', () => {
       commissionRate: '0.10'
     })
     assert.equal(meronOdds, null)
-    // No opposing money → winners on Wala only get stake back (1.00×).
-    assert.equal(walaOdds, 1)
+    // No meron pool → wala pays distributable / wala (= 1 - commission/2).
+    assert.equal(walaOdds, 0.95)
   })
 })

@@ -40,7 +40,7 @@ export default async function reportsRoutes(app) {
           'pesos of commission regardless of whether it won or lost. So:\n\n' +
           '```\n' +
           'commissionGenerated(teller) =\n' +
-          '  SUM_over_bets( bet.stake × bet.fight.commissionRate )\n' +
+          '  SUM_over_bets( bet.stake × (bet.fight.commissionRate / 2) )\n' +
           '```\n\n' +
           'The rate is SNAPSHOTTED per fight, so this is correct even if ' +
           '`Setting.commissionRate` is changed mid-session.\n\n' +
@@ -48,7 +48,7 @@ export default async function reportsRoutes(app) {
           '| status | counts? | why |\n' +
           '|---|---|---|\n' +
           '| `WON` / `LOST` / `PAID` | ✅ | fight settled with MERON/WALA outcome; house took commission |\n' +
-          '| `REFUNDED` | ❌ | DRAW / NO_CONTEST / CANCELLED → no commission was taken |\n' +
+          '| `REFUNDED` | ❌ | DRAW / CANCELLED → no commission was taken |\n' +
           '| `VOIDED` | ❌ | pulled pre-settle, pool decremented, no commission |\n' +
           '| `PENDING` | ❌ | fight not yet settled; commission not yet realized |\n\n' +
           '### Real-time updates\n' +

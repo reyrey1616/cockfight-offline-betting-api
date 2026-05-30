@@ -29,6 +29,7 @@ import {
   NotFoundError,
   RequestTimeoutError
 } from '../../lib/errors.js'
+import { rethrowPrismaTransactionError } from '../../lib/prisma-tx.js'
 import { computeLiveOdds } from '../../lib/odds.js'
 import {
   computePayoutRatios,
@@ -80,13 +81,6 @@ export function projectFight(fight) {
  * Map the Prisma transaction-timeout code to our 408. Every mutating op
  * funnels its error through this so the surface is consistent.
  */
-function rethrowFriendly(err) {
-  if (err?.code === 'P2028') {
-    throw new RequestTimeoutError('System busy, please retry')
-  }
-  throw err
-}
-
 // ===========================================================================
 // POST /fights — create a new fight directly in OPEN state.
 //
@@ -116,7 +110,7 @@ export async function createFight(prisma) {
       // (Legacy SCHEDULED rows are irrelevant — they never reach OPEN
       // unless cancelled and re-created.)
       const otherOpen = await tx.fight.findFirst({
-        where: { status: 'OPEN' },
+        where: { status: { in: ['OPEN', 'LAST_CALL'] } },
         select: { id: true, fightNumber: true }
       })
       if (otherOpen) {
@@ -151,7 +145,7 @@ export async function createFight(prisma) {
       })
     }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
   } catch (err) {
-    rethrowFriendly(err)
+    rethrowPrismaTransactionError(err)
   }
 
   return { fight: projectFight(createdFight) }
@@ -174,7 +168,7 @@ export async function listFights(prisma, query = {}) {
     // never written in SCHEDULED and kiosks shouldn't pick up dead rows
     // from before that change.
     ...(query.current
-      ? { status: { in: ['OPEN', 'CLOSED'] } }
+      ? { status: { in: ['OPEN', 'LAST_CALL', 'CLOSED'] } }
       : {})
   }
 
@@ -210,8 +204,8 @@ export async function closeFight(prisma, id) {
   try {
     updated = await prisma.$transaction(async (tx) => {
       const fight = await lockFightById(tx, id)
-      if (fight.status !== 'OPEN') {
-        throw new ConflictError('Only OPEN fights can be closed', {
+      if (fight.status !== 'OPEN' && fight.status !== 'LAST_CALL') {
+        throw new ConflictError('Only OPEN or LAST_CALL fights can be closed', {
           fightStatus: fight.status
         })
       }
@@ -221,7 +215,7 @@ export async function closeFight(prisma, id) {
       })
     }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
   } catch (err) {
-    rethrowFriendly(err)
+    rethrowPrismaTransactionError(err)
   }
   return { fight: projectFight(updated) }
 }
@@ -251,7 +245,55 @@ export async function reopenFight(prisma, id) {
       })
     }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
   } catch (err) {
-    rethrowFriendly(err)
+    rethrowPrismaTransactionError(err)
+  }
+  return { fight: projectFight(updated) }
+}
+
+// ===========================================================================
+// POST /fights/:id/last-call — OPEN → LAST_CALL
+// ===========================================================================
+export async function setFightLastCall(prisma, id) {
+  let updated
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      const fight = await lockFightById(tx, id)
+      if (fight.status !== 'OPEN') {
+        throw new ConflictError('Only OPEN fights can enter LAST_CALL', {
+          fightStatus: fight.status
+        })
+      }
+      return tx.fight.update({
+        where: { id },
+        data: { status: 'LAST_CALL' }
+      })
+    }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
+  } catch (err) {
+    rethrowPrismaTransactionError(err)
+  }
+  return { fight: projectFight(updated) }
+}
+
+// ===========================================================================
+// POST /fights/:id/resume-open — LAST_CALL → OPEN
+// ===========================================================================
+export async function resumeFightOpen(prisma, id) {
+  let updated
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      const fight = await lockFightById(tx, id)
+      if (fight.status !== 'LAST_CALL') {
+        throw new ConflictError('Only LAST_CALL fights can return to OPEN', {
+          fightStatus: fight.status
+        })
+      }
+      return tx.fight.update({
+        where: { id },
+        data: { status: 'OPEN' }
+      })
+    }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
+  } catch (err) {
+    rethrowPrismaTransactionError(err)
   }
   return { fight: projectFight(updated) }
 }
@@ -263,7 +305,7 @@ export async function reopenFight(prisma, id) {
 //   1. Lock the fight; require status=CLOSED.
 //   2. Compute payout ratios from frozen pools + snapshotted commission.
 //   3. Update each PENDING bet → WON/LOST/REFUNDED (VOIDED bets untouched).
-//   4. Append BET_REFUNDED ledger entries on DRAW/NO_CONTEST refunds.
+//   4. Append BET_REFUNDED ledger entries on DRAW refunds.
 //   5. Stamp settledAt + outcome + payoutRatios on the fight.
 //
 // This is the largest transaction in the system. Bet count is bounded by
@@ -316,7 +358,7 @@ export async function settleFight(prisma, id, { outcome }) {
       })
     }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
   } catch (err) {
-    rethrowFriendly(err)
+    rethrowPrismaTransactionError(err)
   }
   return { fight: projectFight(updated) }
 }
@@ -329,7 +371,7 @@ export async function settleFight(prisma, id, { outcome }) {
 // are untouched.
 // ===========================================================================
 
-const CANCEL_FROM_STATES = ['SCHEDULED', 'OPEN', 'CLOSED']
+const CANCEL_FROM_STATES = ['SCHEDULED', 'OPEN', 'LAST_CALL', 'CLOSED']
 
 export async function cancelFight(prisma, id, { reason } = {}) {
   let updated
@@ -337,7 +379,7 @@ export async function cancelFight(prisma, id, { reason } = {}) {
     updated = await prisma.$transaction(async (tx) => {
       const fight = await lockFightById(tx, id)
       if (!CANCEL_FROM_STATES.includes(fight.status)) {
-        throw new ConflictError('Only SCHEDULED, OPEN or CLOSED fights can be cancelled', {
+        throw new ConflictError('Only SCHEDULED, OPEN, LAST_CALL or CLOSED fights can be cancelled', {
           fightStatus: fight.status
         })
       }
@@ -363,7 +405,7 @@ export async function cancelFight(prisma, id, { reason } = {}) {
       })
     }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
   } catch (err) {
-    rethrowFriendly(err)
+    rethrowPrismaTransactionError(err)
   }
   return { fight: projectFight(updated) }
 }
@@ -441,7 +483,7 @@ export async function correctFight(prisma, actor, id, { outcome, reason }) {
       })
     }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
   } catch (err) {
-    rethrowFriendly(err)
+    rethrowPrismaTransactionError(err)
   }
   return { fight: projectFight(updated) }
 }
@@ -468,8 +510,8 @@ async function toggleSide(prisma, actor, id, side, { accepting }) {
     result = await prisma.$transaction(async (tx) => {
       const fight = await lockFightById(tx, id)
 
-      if (fight.status !== 'OPEN') {
-        throw new ConflictError('Side hold/unhold is only valid while the fight is OPEN', {
+      if (fight.status !== 'OPEN' && fight.status !== 'LAST_CALL') {
+        throw new ConflictError('Side hold/unhold is only valid while the fight is OPEN or LAST_CALL', {
           fightStatus: fight.status
         })
       }
@@ -492,7 +534,7 @@ async function toggleSide(prisma, actor, id, side, { accepting }) {
       return { fight: updated, replay: false }
     }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
   } catch (err) {
-    rethrowFriendly(err)
+    rethrowPrismaTransactionError(err)
   }
   return { fight: projectFight(result.fight), replay: result.replay }
 }

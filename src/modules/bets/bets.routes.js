@@ -336,12 +336,11 @@ export default async function betsRoutes(app) {
         description:
           'Cashier action. Marks a `WON` bet as `PAID`, stamps `paidAt` and ' +
           '`paidByUserId`, and appends a negative `PAYOUT` TellerLedger ' +
-          'entry on the **paying** teller (the actor) — that teller\'s ' +
-          'drawer is hit, not necessarily the original bet-taker\'s. This ' +
-          'matches the redemption-window reality where a customer can ' +
-          'cash a ticket at any open counter.\n\n' +
+          'entry on the original teller.\n\n' +
           '### Authorization\n' +
-          'Any authenticated user. The cashier window is open to all staff.\n\n' +
+          'Only the teller who originally took the ticket can pay it out. ' +
+          'If scanned by another teller, this endpoint returns 403 with ' +
+          '"This ticket is not bet on this teller.".\n\n' +
           '### Idempotency\n' +
           'Paying an already-`PAID` bet returns the existing record with ' +
           '`replay: true` (200). Concurrent pay calls are race-safe via a ' +
@@ -353,6 +352,7 @@ export default async function betsRoutes(app) {
           ...payBetResponseSchema,
           400: errorResponses[400],
           401: errorResponses[401],
+          403: errorResponses[403],
           404: errorResponses[404],
           408: errorResponses[408],
           409: errorResponses[409],

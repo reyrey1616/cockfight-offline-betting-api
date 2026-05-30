@@ -52,10 +52,10 @@ const fightSummarySchema = {
   properties: {
     id: { type: 'string' },
     fightNumber: { type: 'integer' },
-    status: { type: 'string', enum: ['SCHEDULED', 'OPEN', 'CLOSED', 'SETTLED', 'CANCELLED'] },
+    status: { type: 'string', enum: ['SCHEDULED', 'OPEN', 'LAST_CALL', 'CLOSED', 'SETTLED', 'CANCELLED'] },
     outcome: {
       anyOf: [
-        { type: 'string', enum: ['MERON', 'WALA', 'DRAW', 'CANCELLED', 'NO_CONTEST'] },
+        { type: 'string', enum: ['MERON', 'WALA', 'DRAW', 'CANCELLED'] },
         { type: 'null' }
       ],
       description: 'Fight result — set when status is SETTLED.'
@@ -93,7 +93,7 @@ export const placeBetRequestSchema = {
     side: { type: 'string', enum: ['MERON', 'WALA'] },
     amount: {
       type: 'number',
-      exclusiveMinimum: 0,
+      minimum: 100,
       maximum: 1_000_000,
       multipleOf: 0.01
     }

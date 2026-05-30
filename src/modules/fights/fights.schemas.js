@@ -10,8 +10,8 @@
 
 const cuidPattern = '^[a-z0-9]{20,32}$'
 
-const FIGHT_STATUS = ['SCHEDULED', 'OPEN', 'CLOSED', 'SETTLED', 'CANCELLED']
-const FIGHT_OUTCOME = ['MERON', 'WALA', 'DRAW', 'NO_CONTEST']
+const FIGHT_STATUS = ['SCHEDULED', 'OPEN', 'LAST_CALL', 'CLOSED', 'SETTLED', 'CANCELLED']
+const FIGHT_OUTCOME = ['MERON', 'WALA', 'DRAW']
 const SIDE = ['MERON', 'WALA']
 
 // ---------------------------------------------------------------------------
@@ -110,7 +110,7 @@ export const listFightsQuerySchema = {
     current: {
       type: 'boolean',
       description:
-        'true → only fights in OPEN or CLOSED (i.e. live or awaiting ' +
+        'true → only fights in OPEN, LAST_CALL, or CLOSED (i.e. live or awaiting ' +
         'settlement). SETTLED / CANCELLED are historical; legacy SCHEDULED ' +
         'rows are also excluded.'
     },

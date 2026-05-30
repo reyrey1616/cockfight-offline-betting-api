@@ -4,6 +4,7 @@ enum FightStatus {
   // POST /fights endpoint writes status=OPEN directly.
   SCHEDULED
   OPEN      // accepting bets
+  LAST_CALL // accepting bets, closing soon
   CLOSED    // betting closed, awaiting result
   SETTLED   // result entered, payouts calculated
   CANCELLED // fight cancelled, all bets refunded
@@ -14,7 +15,6 @@ enum FightOutcome {
   WALA
   DRAW       // refund all bets
   CANCELLED  // refund all bets
-  NO_CONTEST // refund all bets
 }
 
 model Fight {

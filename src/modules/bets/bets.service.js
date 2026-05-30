@@ -7,7 +7,8 @@
 
 import { evaluateBetVoidEligibility } from './bets.helpers.js'
 import { generateTicketCode } from '../../lib/ticket-code.js'
-import { computeLiveOdds } from '../../lib/odds.js'
+import { projectBetFightSummary } from '../../lib/bet-fight-summary.js'
+import { rethrowPrismaTransactionError } from '../../lib/prisma-tx.js'
 import { deriveInitials } from '../../lib/initials.js'
 import { computeTellerBalance } from '../../lib/teller-balance.js'
 import {
@@ -81,7 +82,7 @@ export async function placeBet(prisma, { clientRequestId, fightId, side, amount,
     // Replay → no broadcast (the original placement already broadcast).
     return {
       bet: replayBet,
-      fight: projectFight(replayBet.fight),
+      fight: projectBetFightSummary(replayBet.fight),
       replay: true,
       actorBalance: balance,
       balanceBroadcast: null
@@ -121,7 +122,7 @@ export async function placeBet(prisma, { clientRequestId, fightId, side, amount,
 
       // 3c. Re-validate state INSIDE the lock (admin may have closed the
       //     fight or held the side between the client request and now).
-      if (fight.status !== 'OPEN') {
+      if (fight.status !== 'OPEN' && fight.status !== 'LAST_CALL') {
         throw new ConflictError('Fight is not accepting bets', {
           fightStatus: fight.status
         })
@@ -189,7 +190,7 @@ export async function placeBet(prisma, { clientRequestId, fightId, side, amount,
         const balance = await computeTellerBalance(prisma, winner.tellerId)
         return {
           bet: winner,
-          fight: projectFight(winner.fight),
+          fight: projectBetFightSummary(winner.fight),
           replay: true,
           actorBalance: balance,
           balanceBroadcast: null
@@ -197,12 +198,7 @@ export async function placeBet(prisma, { clientRequestId, fightId, side, amount,
       }
     }
 
-    // Prisma transaction API error — most commonly the 5s timeout.
-    if (err.code === 'P2028') {
-      throw new RequestTimeoutError('System busy, please retry')
-    }
-
-    throw err
+    rethrowPrismaTransactionError(err)
   }
 
   // Post-commit balance read. Computed AFTER the transaction commits so
@@ -213,7 +209,7 @@ export async function placeBet(prisma, { clientRequestId, fightId, side, amount,
 
   return {
     bet: result.bet,
-    fight: projectFight(result.fight),
+    fight: projectBetFightSummary(result.fight),
     replay: false,
     actorBalance: balance,
     balanceBroadcast: {
@@ -221,25 +217,6 @@ export async function placeBet(prisma, { clientRequestId, fightId, side, amount,
       tellerName: teller.fullName,
       delta: { type: 'BET_PLACED', amount: result.bet.amount.toFixed(2) }
     }
-  }
-}
-
-// Shape the fight row into the response projection (adds live odds).
-function projectFight(fight) {
-  const { meronOdds, walaOdds } = computeLiveOdds(fight)
-  return {
-    id: fight.id,
-    fightNumber: fight.fightNumber,
-    status: fight.status,
-    outcome: fight.outcome ?? null,
-    meronPool: fight.meronPool,
-    walaPool: fight.walaPool,
-    meronOdds,
-    walaOdds,
-    payoutRatioMeron:
-      fight.payoutRatioMeron != null ? String(fight.payoutRatioMeron) : null,
-    payoutRatioWala:
-      fight.payoutRatioWala != null ? String(fight.payoutRatioWala) : null
   }
 }
 
@@ -268,6 +245,12 @@ function assertCanReadBet(actor, bet) {
 function assertCanVoidBet(actor, bet) {
   if (isAdmin(actor) || isOwnerTeller(actor, bet)) return
   throw new ForbiddenError('Only the original teller or an admin may void this bet')
+}
+
+// Pay access: only the teller who originally took the bet may pay it out.
+function assertCanPayBet(actor, bet) {
+  if (actor?.id === bet.tellerId) return
+  throw new ForbiddenError('This ticket is not bet on this teller.')
 }
 
 // Convert a numeric / string / Decimal value to a negative Decimal string
@@ -326,7 +309,7 @@ export async function getBet(prisma, actor, id) {
   })
   if (!bet) throw new NotFoundError('Bet not found')
   assertCanReadBet(actor, bet)
-  return { bet, fight: projectFight(bet.fight) }
+  return { bet, fight: projectBetFightSummary(bet.fight) }
 }
 
 // ===========================================================================
@@ -343,7 +326,7 @@ export async function getBetByCode(prisma, code) {
     include: { fight: true }
   })
   if (!bet) throw new NotFoundError('Bet not found for that ticket code')
-  return { bet, fight: projectFight(bet.fight) }
+  return { bet, fight: projectBetFightSummary(bet.fight) }
 }
 
 // ===========================================================================
@@ -385,7 +368,7 @@ export async function voidBet(prisma, actor, betId, { reason } = {}) {
     const balance = await computeTellerBalance(prisma, existing.tellerId)
     return {
       bet: existing,
-      fight: projectFight(existing.fight),
+      fight: projectBetFightSummary(existing.fight),
       replay: true,
       actorBalance: balance,
       balanceBroadcast: null
@@ -484,10 +467,7 @@ export async function voidBet(prisma, actor, betId, { reason } = {}) {
       return { bet: updatedBet, fight: updatedFight, replay: false }
     }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
   } catch (err) {
-    if (err.code === 'P2028') {
-      throw new RequestTimeoutError('System busy, please retry')
-    }
-    throw err
+    rethrowPrismaTransactionError(err)
   }
 
   // Affected teller for void = the ORIGINAL bet-taker (whose drawer the
@@ -498,7 +478,7 @@ export async function voidBet(prisma, actor, betId, { reason } = {}) {
 
   return {
     bet: result.bet,
-    fight: projectFight(result.fight),
+    fight: projectBetFightSummary(result.fight),
     replay: result.replay,
     actorBalance: balance,
     balanceBroadcast: result.replay
@@ -537,6 +517,7 @@ export async function payBet(prisma, actor, betId) {
     include: { fight: true }
   })
   if (!existing) throw new NotFoundError('Bet not found')
+  assertCanPayBet(actor, existing)
 
   if (existing.status === 'PAID') {
     // For replay we already know who got the original PAYOUT ledger row
@@ -545,7 +526,7 @@ export async function payBet(prisma, actor, betId) {
     const balance = await computeTellerBalance(prisma, existing.paidByUserId ?? actor.id)
     return {
       bet: existing,
-      fight: projectFight(existing.fight),
+      fight: projectBetFightSummary(existing.fight),
       replay: true,
       actorBalance: balance,
       balanceBroadcast: null
@@ -612,13 +593,25 @@ export async function payBet(prisma, actor, betId) {
         }
       })
 
+      const payoutAmountString =
+        typeof bet.payoutAmount === 'object' && bet.payoutAmount !== null
+          ? bet.payoutAmount.toString()
+          : String(bet.payoutAmount)
+      const balance = await computeTellerBalance(tx, actor.id)
+      if (Number(balance) < 0) {
+        throw new ConflictError('Payout amount exceeds your current balance', {
+          currentBalanceBeforePayout: (
+            Number(balance) + Number(payoutAmountString)
+          ).toFixed(2),
+          requestedPayout: payoutAmountString,
+          shortfall: (-Number(balance)).toFixed(2)
+        })
+      }
+
       return { bet: updatedBet, fight: updatedBet.fight, replay: false }
     }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
   } catch (err) {
-    if (err.code === 'P2028') {
-      throw new RequestTimeoutError('System busy, please retry')
-    }
-    throw err
+    rethrowPrismaTransactionError(err)
   }
 
   // Affected teller for pay = the actor (whoever physically handed over
@@ -627,7 +620,7 @@ export async function payBet(prisma, actor, betId) {
 
   return {
     bet: result.bet,
-    fight: projectFight(result.fight),
+    fight: projectBetFightSummary(result.fight),
     replay: result.replay,
     actorBalance: balance,
     balanceBroadcast: result.replay

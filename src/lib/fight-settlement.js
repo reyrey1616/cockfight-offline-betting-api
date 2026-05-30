@@ -11,7 +11,10 @@
 // precision is safe for the arithmetic here. Final money values are rounded
 // to 2 decimals before they hit the wire / DB.
 
-const SETTLED_TERMINAL_OUTCOMES = ['MERON', 'WALA', 'DRAW', 'NO_CONTEST']
+import { BadRequestError } from './errors.js'
+import { computePoolDistributable } from './odds.js'
+
+const SETTLED_TERMINAL_OUTCOMES = ['MERON', 'WALA', 'DRAW']
 
 function toNumber(value) {
   if (value === null || value === undefined) return 0
@@ -30,9 +33,9 @@ function toMoneyString(n) {
   return round2(n).toFixed(2)
 }
 
-// Format a Number as a 4-decimal STRING for payout ratios.
+// Payout ratios: floored to 2 decimals (matches live board / payout math).
 function toRatioString(n) {
-  return (Math.round(n * 10000) / 10000).toFixed(4)
+  return (Math.floor(n * 100) / 100).toFixed(2)
 }
 
 // ---------------------------------------------------------------------------
@@ -41,11 +44,13 @@ function toRatioString(n) {
 
 /**
  * Validate an outcome value supplied by the admin at settle/correct time.
- * Throws Error (caller wraps as BadRequestError) for unknown values.
+ * Throws BadRequestError for unknown values.
  */
 export function assertValidOutcome(outcome) {
   if (!SETTLED_TERMINAL_OUTCOMES.includes(outcome)) {
-    throw new Error(`Invalid outcome "${outcome}". Expected one of: ${SETTLED_TERMINAL_OUTCOMES.join(', ')}.`)
+    throw new BadRequestError(
+      `Invalid outcome "${outcome}". Expected one of: ${SETTLED_TERMINAL_OUTCOMES.join(', ')}.`
+    )
   }
 }
 
@@ -56,13 +61,13 @@ export function assertValidOutcome(outcome) {
  *
  * Pari-mutuel formula:
  *   total           = meronPool + walaPool
- *   commission_take = total * commissionRate
+ *   commission_take = total * (commissionRate / 2)
  *   distributable   = total - commission_take
- *   ratio_winner    = distributable / winning_pool   (rounded to 4 decimals)
+ *   ratio_winner    = distributable / winning_pool   (floored to 2 decimals)
  *   ratio_loser     = 0                              (no payout)
  *
  * Edge cases:
- *   - Outcome DRAW / NO_CONTEST → both ratios null (refund, not payout).
+ *   - Outcome DRAW → both ratios null (refund, not payout).
  *   - Winning pool is zero (no one bet that side) → ratio null. The house
  *     keeps the losing pool; there are no winners to pay.
  *   - Both pools are zero → both ratios null. Nothing to do at settlement.
@@ -72,15 +77,13 @@ export function assertValidOutcome(outcome) {
 export function computePayoutRatios({ meronPool, walaPool, commissionRate, outcome }) {
   assertValidOutcome(outcome)
 
-  if (outcome === 'DRAW' || outcome === 'NO_CONTEST') {
+  if (outcome === 'DRAW') {
     return { payoutRatioMeron: null, payoutRatioWala: null }
   }
 
   const meron = toNumber(meronPool)
   const wala = toNumber(walaPool)
-  const commission = toNumber(commissionRate)
-  const total = meron + wala
-  const distributable = total * (1 - commission)
+  const distributable = computePoolDistributable(meron, wala, commissionRate)
 
   if (outcome === 'MERON') {
     return {
@@ -116,7 +119,7 @@ export function computePayoutRatios({ meronPool, walaPool, commissionRate, outco
  * tracking). See applyCorrectionToBet() for the correction-specific wrapper.
  */
 export function determineBetTargetState({ outcome, payoutRatioMeron, payoutRatioWala }, bet) {
-  if (outcome === 'DRAW' || outcome === 'NO_CONTEST') {
+  if (outcome === 'DRAW') {
     return { targetStatus: 'REFUNDED', targetPayoutAmount: toMoneyString(toNumber(bet.amount)) }
   }
 
@@ -153,7 +156,7 @@ export function determineBetTargetState({ outcome, payoutRatioMeron, payoutRatio
  *   { skip: true }                                   ← bet is VOIDED, leave it
  *   { update: { where, data }, ledger?: { ... } }    ← apply this
  *
- * Ledger entries are emitted ONLY for refunds (DRAW / NO_CONTEST). Winning
+ * Ledger entries are emitted ONLY for refunds (DRAW). Winning
  * bets get their PAYOUT entry later, at redemption time. Losing bets have
  * no cash movement.
  */
@@ -182,7 +185,7 @@ export function planSettlementForBet(ratios, bet) {
           type: 'BET_REFUNDED',
           amount: `-${toMoneyString(toNumber(bet.amount))}`,
           betId: bet.id,
-          notes: 'Fight settled as draw/no-contest'
+          notes: 'Fight settled as draw'
         }
       : null
   }

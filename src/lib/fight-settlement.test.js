@@ -28,7 +28,7 @@ describe('computePayoutRatios', () => {
       commissionRate: '0.10',
       outcome: 'MERON'
     })
-    assert.equal(ratios.payoutRatioMeron, '1.6200')
+    assert.equal(ratios.payoutRatioMeron, '1.71')
     assert.equal(ratios.payoutRatioWala, null)
   })
 
@@ -40,7 +40,7 @@ describe('computePayoutRatios', () => {
 describe('determineBetTargetState', () => {
   const ratios = {
     outcome: 'MERON',
-    payoutRatioMeron: '1.6200',
+    payoutRatioMeron: '1.71',
     payoutRatioWala: null
   }
 
@@ -50,7 +50,7 @@ describe('determineBetTargetState', () => {
       amount: '100.00'
     })
     assert.equal(result.targetStatus, 'WON')
-    assert.equal(result.targetPayoutAmount, '162.00')
+    assert.equal(result.targetPayoutAmount, '171.00')
   })
 
   it('marks losing wala bet as LOST', () => {

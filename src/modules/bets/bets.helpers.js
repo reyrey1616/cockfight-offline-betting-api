@@ -1,7 +1,7 @@
 // Pure bet-void eligibility rules — shared by service pre-checks and tests.
-// A teller may void (cancel) only their own PENDING ticket while the fight is OPEN.
+// A teller may void (cancel) only their own PENDING ticket while the fight is OPEN or LAST_CALL.
 
-const VOIDABLE_FIGHT_STATUS = 'OPEN'
+const VOIDABLE_FIGHT_STATUSES = new Set(['OPEN', 'LAST_CALL'])
 const VOIDABLE_BET_STATUS = 'PENDING'
 
 const FIGHT_STATUS_MESSAGES = {
@@ -28,7 +28,7 @@ export function evaluateBetVoidEligibility({ betStatus, fightStatus }) {
     return { allowed: false, reason: BET_STATUS_MESSAGES.VOIDED }
   }
 
-  if (fightStatus !== VOIDABLE_FIGHT_STATUS) {
+  if (!VOIDABLE_FIGHT_STATUSES.has(fightStatus)) {
     const reason =
       FIGHT_STATUS_MESSAGES[fightStatus] ??
       'Tickets can only be cancelled while the fight is open for betting.'
