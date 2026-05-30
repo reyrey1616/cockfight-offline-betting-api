@@ -51,6 +51,8 @@
 
 import { Prisma } from '@prisma/client'
 
+import { addMoney, toMoney } from './reports.fight-commission.js'
+
 // ===========================================================================
 // Build a Prisma SQL fragment for the time-range / fight filter.
 //
@@ -168,27 +170,88 @@ export async function getTellerCommissions(prisma, rawQuery = {}) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Money projection helpers.
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// GET /reports/fight-commissions — per-fight house commission (admin)
+// ===========================================================================
 
-/**
- * Format any incoming numeric type (Prisma Decimal, bigint, number,
- * string) to a fixed-2 string. Goes through Number for portability —
- * we never deal with more than ~12 significant digits of pesos here
- * so we don't approach JS Number's 2^53 precision ceiling.
- */
-function toMoney(v) {
-  if (v === null || v === undefined) return '0.00'
-  // Prisma Decimal exposes toFixed(); bigint doesn't.
-  if (typeof v?.toFixed === 'function') return v.toFixed(2)
-  return Number(v).toFixed(2)
+function buildFightCommissionFilters({ since, until }) {
+  const sinceClause = since
+    ? Prisma.sql` AND COALESCE(f."settledAt", f."createdAt") >= ${new Date(since)}`
+    : Prisma.empty
+  const untilClause = until
+    ? Prisma.sql` AND COALESCE(f."settledAt", f."createdAt") <= ${new Date(until)}`
+    : Prisma.empty
+  return { sinceClause, untilClause }
 }
 
-/** Add two fixed-2 strings, return fixed-2. */
-function addMoney(a, b) {
-  // Multiply by 100 to work in integer "centavos" — avoids the
-  // classic 0.1 + 0.2 = 0.30000000000000004 float surprise.
-  const totalCent = Math.round(Number(a) * 100) + Math.round(Number(b) * 100)
-  return (totalCent / 100).toFixed(2)
+export async function getFightCommissions(prisma, rawQuery = {}) {
+  const since = rawQuery.since ?? null
+  const until = rawQuery.until ?? null
+  const { sinceClause, untilClause } = buildFightCommissionFilters({ since, until })
+
+  const rows = await prisma.$queryRaw`
+    SELECT
+      f.id                                                              AS "fightId",
+      f."fightNumber"                                                   AS "fightNumber",
+      f.status                                                          AS "status",
+      f.outcome                                                         AS "outcome",
+      f."commissionRate"                                                AS "commissionRate",
+      f."settledAt"                                                     AS "settledAt",
+      f."correctedAt"                                                   AS "correctedAt",
+      (f."meronPool" + f."walaPool")                                    AS "grossHandle",
+      COUNT(b.id) FILTER (WHERE b.status <> 'VOIDED')::int              AS "betCount",
+      COUNT(b.id) FILTER (WHERE b.status = 'PENDING')::int              AS "pendingBetCount"
+    FROM "Fight" f
+    LEFT JOIN "Bet" b ON b."fightId" = f.id
+    WHERE 1 = 1
+      ${sinceClause}
+      ${untilClause}
+    GROUP BY f.id
+    ORDER BY f."fightNumber" DESC
+  `
+
+  const fights = rows.map((r) => {
+    const grossHandle = toMoney(r.grossHandle)
+    const status = r.status
+    const outcome = r.outcome
+    const commission =
+      status === 'SETTLED' && (outcome === 'MERON' || outcome === 'WALA')
+        ? toMoney(Number(r.grossHandle) * (Number(r.commissionRate) / 2))
+        : '0.00'
+
+    return {
+      fightId: r.fightId,
+      fightNumber: r.fightNumber,
+      status,
+      outcome: outcome ?? null,
+      commissionRate: String(r.commissionRate),
+      grossHandle,
+      commission,
+      betCount: r.betCount,
+      pendingBetCount: r.pendingBetCount,
+      wasCorrected: r.correctedAt != null,
+      settledAt: r.settledAt ? new Date(r.settledAt).toISOString() : null
+    }
+  })
+
+  const totals = fights.reduce(
+    (acc, f) => ({
+      fightCount: acc.fightCount + 1,
+      betCount: acc.betCount + f.betCount,
+      grossHandle: addMoney(acc.grossHandle, f.grossHandle),
+      commission: addMoney(acc.commission, f.commission)
+    }),
+    {
+      fightCount: 0,
+      betCount: 0,
+      grossHandle: '0.00',
+      commission: '0.00'
+    }
+  )
+
+  return {
+    scope: { since: since ?? null, until: until ?? null },
+    fights,
+    totals
+  }
 }

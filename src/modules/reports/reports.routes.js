@@ -1,13 +1,15 @@
 // Routes for the reports module.
 //
-// Surface (this slice):
+// Surface:
 //   GET /reports/teller-commissions   admin   per-teller commission leaderboard
+//   GET /reports/fight-commissions    admin   per-fight commission table
 //
-// The remaining Tier 3 reports (`/reports/fight/{id}`, `/reports/session`,
-// `/reports/teller/{id}`) will land in subsequent slices alongside this one.
+// Remaining Tier 3: `/reports/session`, `/reports/teller/{id}`.
 
-import { getTellerCommissions } from './reports.service.js'
+import { getFightCommissions, getTellerCommissions } from './reports.service.js'
 import {
+  fightCommissionsQuerySchema,
+  fightCommissionsResponseSchema,
   tellerCommissionsQuerySchema,
   tellerCommissionsResponseSchema
 } from './reports.schemas.js'
@@ -73,5 +75,36 @@ export default async function reportsRoutes(app) {
       }
     },
     async (request) => getTellerCommissions(request.server.prisma, request.query)
+  )
+
+  // -------------------------------------------------------------------------
+  // GET /reports/fight-commissions — per-fight commission
+  // -------------------------------------------------------------------------
+  app.get(
+    '/fight-commissions',
+    {
+      preHandler: adminOnly,
+      schema: {
+        tags,
+        summary: 'Per-fight house commission (admin)',
+        description:
+          'Admin-only. Returns one row per fight with gross handle (frozen pools) ' +
+          'and house commission (SETTLED MERON/WALA only: gross × commissionRate / 2). ' +
+          'Sorted by fight number descending.\n\n' +
+          'SUM(fights[i].commission) should match realized commission for the session. ' +
+          'Refresh when `FIGHT_SETTLED`, `FIGHT_CORRECTED`, or `FIGHT_CANCELLED` fires on `/ws`.',
+        operationId: 'reportsFightCommissions',
+        security,
+        querystring: fightCommissionsQuerySchema,
+        response: {
+          ...fightCommissionsResponseSchema,
+          400: errorResponses[400],
+          401: errorResponses[401],
+          403: errorResponses[403],
+          500: errorResponses[500]
+        }
+      }
+    },
+    async (request) => getFightCommissions(request.server.prisma, request.query)
   )
 }

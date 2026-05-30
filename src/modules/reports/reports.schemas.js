@@ -83,6 +83,85 @@ const tellerCommissionRowSchema = {
 // Response — full shape.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// GET /reports/fight-commissions  — querystring
+// ---------------------------------------------------------------------------
+
+export const fightCommissionsQuerySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    since: {
+      type: 'string',
+      format: 'date-time',
+      description:
+        'Lower bound on fight activity (`settledAt`, or `createdAt` if not settled).'
+    },
+    until: {
+      type: 'string',
+      format: 'date-time',
+      description: 'Upper bound on fight activity.'
+    }
+  }
+}
+
+const fightCommissionRowSchema = {
+  type: 'object',
+  required: [
+    'fightId', 'fightNumber', 'status', 'outcome', 'commissionRate',
+    'grossHandle', 'commission', 'betCount', 'pendingBetCount', 'wasCorrected',
+    'settledAt'
+  ],
+  properties: {
+    fightId: { type: 'string' },
+    fightNumber: { type: 'integer' },
+    status: { type: 'string' },
+    outcome: { type: ['string', 'null'] },
+    commissionRate: { type: 'string' },
+    grossHandle: { type: 'string', description: 'meronPool + walaPool at report time.' },
+    commission: {
+      type: 'string',
+      description: 'House commission (SETTLED MERON/WALA: grossHandle × commissionRate / 2).'
+    },
+    betCount: { type: 'integer', minimum: 0 },
+    pendingBetCount: { type: 'integer', minimum: 0 },
+    wasCorrected: { type: 'boolean' },
+    settledAt: { type: ['string', 'null'], format: 'date-time' }
+  }
+}
+
+export const fightCommissionsResponseSchema = {
+  200: {
+    type: 'object',
+    required: ['scope', 'fights', 'totals'],
+    properties: {
+      scope: {
+        type: 'object',
+        required: ['since', 'until'],
+        properties: {
+          since: { type: ['string', 'null'], format: 'date-time' },
+          until: { type: ['string', 'null'], format: 'date-time' }
+        }
+      },
+      fights: {
+        type: 'array',
+        description: 'One row per fight, newest fight number first.',
+        items: fightCommissionRowSchema
+      },
+      totals: {
+        type: 'object',
+        required: ['fightCount', 'betCount', 'grossHandle', 'commission'],
+        properties: {
+          fightCount: { type: 'integer', minimum: 0 },
+          betCount: { type: 'integer', minimum: 0 },
+          grossHandle: { type: 'string' },
+          commission: { type: 'string' }
+        }
+      }
+    }
+  }
+}
+
 export const tellerCommissionsResponseSchema = {
   200: {
     type: 'object',

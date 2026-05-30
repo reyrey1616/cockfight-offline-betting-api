@@ -2,12 +2,14 @@
 
 **Multiple computers:** This guide is for the **one server PC**. Teller kiosks are **other machines** on the LAN — they only run the Electron app and connect here. See [../MULTI-COMPUTER.md](../MULTI-COMPUTER.md).
 
-One PC runs the database, API, and admin browser. Teller kiosks (5–10+ separate PCs) only run **Cockfight Betting Kiosk**.
+One PC runs the database, API, and admin browser. Teller kiosks (5–10+ separate PCs) only run **FMJ offline betting machine**.
 
 ## 1. Prerequisites
 
 - Node.js 20+
 - PostgreSQL (local on server PC)
+
+**IT / Windows server:** see [../IT-SUPPORT.md](../IT-SUPPORT.md) (nvm, TablePlus, run services). Also [../WINDOWS-SERVER-SETUP.md](../WINDOWS-SERVER-SETUP.md).
 
 ## 2. Configure API
 
