@@ -166,10 +166,9 @@ async function main() {
       token: adminToken,
       body: {
         tellerId: t.id,
-        collectorId: collector.id,
-        amount: '5000.00',
-        notes: 'commissions E2E float',
-        password: ADMIN_PASSWORD
+        collectorCode: collector.code,
+      amount: 5000,
+      notes: 'commissions E2E float'
       }
     })
     if (r.status !== 201) throw new Error(`Advance to ${t.username} failed: ${JSON.stringify(r.data)}`)
@@ -346,7 +345,7 @@ async function main() {
     `A's commission unchanged by PENDING bet`)
 
   // VOID the bet → still excluded.
-  r = await api('POST', `/bets/${pendingBetId}/void`, { token: adminToken, body: {} })
+  r = await api('POST', `/bets/${pendingBetId}/void`, { token: adminToken, body: { adminPassword: ADMIN_PASSWORD } })
   assert(r.status === 200, `Void bet → 200 (got ${r.status})`)
   r = await api('GET', '/reports/teller-commissions', { token: adminToken })
   assert(r.data.totals.commissionGenerated === '80.00',

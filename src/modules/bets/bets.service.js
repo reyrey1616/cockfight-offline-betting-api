@@ -5,6 +5,7 @@
 // either all land or none land. This is the rule for a money system: there
 // is no acceptable middle state.
 
+import { verifyAdminPassword } from '../auth/auth.service.js'
 import { evaluateBetVoidEligibility } from './bets.helpers.js'
 import { generateTicketCode } from '../../lib/ticket-code.js'
 import { projectBetFightSummary } from '../../lib/bet-fight-summary.js'
@@ -354,7 +355,9 @@ export async function getBetByCode(prisma, code) {
 //   - 408 RequestTimeoutError — transaction timed out
 // ===========================================================================
 
-export async function voidBet(prisma, actor, betId, { reason } = {}) {
+export async function voidBet(prisma, actor, betId, { reason, adminPassword } = {}) {
+  await verifyAdminPassword(prisma, adminPassword)
+
   // 1. Cheap fast-path: find the bet and short-circuit if it's already
   //    voided (idempotent retry).
   const existing = await prisma.bet.findUnique({

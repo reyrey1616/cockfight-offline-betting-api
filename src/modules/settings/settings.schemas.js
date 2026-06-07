@@ -64,3 +64,21 @@ export const updateSettingsResponseSchema = {
     properties: { setting: settingSchema }
   }
 }
+
+export const adminVoidBarcodeResponseSchema = {
+  200: {
+    type: 'object',
+    required: ['username', 'barcodeValue'],
+    properties: {
+      username: {
+        type: 'string',
+        description: 'Admin username (for slip label only; barcode encodes the password).'
+      },
+      barcodeValue: {
+        type: 'string',
+        description:
+          'Plaintext admin login password — encoded as CODE128 for teller void authorization.'
+      }
+    }
+  }
+}

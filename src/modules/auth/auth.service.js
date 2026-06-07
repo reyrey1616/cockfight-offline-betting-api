@@ -1,4 +1,4 @@
-import { BadRequestError, UnauthorizedError } from '../../lib/errors.js'
+import { BadRequestError, ForbiddenError, UnauthorizedError } from '../../lib/errors.js'
 import { assertPasswordPolicy } from '../../lib/password-policy.js'
 
 // Re-exported here so existing imports from `auth.service` keep working.
@@ -78,6 +78,29 @@ export async function verifyUserPassword(prisma, userId, plaintextPassword) {
     (plaintextPassword ?? '') === user.password
   if (!ok) {
     throw new UnauthorizedError('Password verification failed')
+  }
+  return true
+}
+
+/**
+ * Step-up admin authorization for teller-initiated voids.
+ * Accepts any active ADMIN account password (matches void barcode slips).
+ * Returns 403 (not 401) so a wrong scan does not clear the teller's bearer session.
+ */
+export async function verifyAdminPassword(prisma, plaintextPassword) {
+  const submitted = plaintextPassword ?? ''
+  if (submitted.length === 0) {
+    throw new ForbiddenError('Admin authorization failed. Scan the correct void barcode.')
+  }
+
+  const admins = await prisma.user.findMany({
+    where: { role: 'ADMIN', isActive: true },
+    select: { password: true }
+  })
+
+  const ok = admins.some((admin) => submitted === admin.password)
+  if (!ok) {
+    throw new ForbiddenError('Admin authorization failed. Scan the correct void barcode.')
   }
   return true
 }

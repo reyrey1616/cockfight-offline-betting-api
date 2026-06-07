@@ -28,7 +28,7 @@ import {
 import { computeTellerBalance } from '../../lib/teller-balance.js'
 import { generateUniqueCode } from '../../lib/code-generator.js'
 import { rethrowPrismaTransactionError } from '../../lib/prisma-tx.js'
-import { verifyUserPassword } from '../auth/auth.service.js'
+import { getCollectorByCode } from '../collectors/collectors.service.js'
 import { negate, resolveAdvanceRecipientId, toMoneyString } from './cash.helpers.js'
 
 // Prefix → ledger-row barcode mapping. Only CASH_ADVANCE and REMIT rows
@@ -86,12 +86,8 @@ async function findActiveTeller(prismaOrTx, tellerId) {
   return user
 }
 
-async function findActiveCollector(prismaOrTx, collectorId) {
-  const collector = await prismaOrTx.collector.findUnique({
-    where: { id: collectorId },
-    select: { id: true, name: true, isActive: true }
-  })
-  if (!collector) throw new NotFoundError('Collector not found')
+async function findActiveCollectorByCode(prismaOrTx, collectorCode) {
+  const collector = await getCollectorByCode(prismaOrTx, collectorCode.toUpperCase())
   if (!collector.isActive) {
     throw new BadRequestError('Collector is not active')
   }
@@ -106,9 +102,7 @@ async function findActiveCollector(prismaOrTx, collectorId) {
 // be active. Returns the created row + the recipient's NEW balance.
 // ===========================================================================
 
-export async function cashAdvance(prisma, actor, { tellerId, collectorId, amount, notes, password }) {
-  await verifyUserPassword(prisma, actor.id, password)
-
+export async function cashAdvance(prisma, actor, { tellerId, collectorCode, amount, notes }) {
   const recipientId = resolveAdvanceRecipientId(actor, tellerId)
   const amountString = toMoneyString(amount)
 
@@ -119,7 +113,7 @@ export async function cashAdvance(prisma, actor, { tellerId, collectorId, amount
   // CASH_ADVANCE for an in-the-process-of-being-deactivated teller is
   // not a meaningful inconsistency.
   const teller = await findActiveTeller(prisma, recipientId)
-  await findActiveCollector(prisma, collectorId)
+  const collector = await findActiveCollectorByCode(prisma, collectorCode)
 
   let result
   try {
@@ -134,7 +128,7 @@ export async function cashAdvance(prisma, actor, { tellerId, collectorId, amount
           tellerId: recipientId,
           type: 'CASH_ADVANCE',
           amount: amountString,
-          collectorId,
+          collectorId: collector.id,
           code,
           notes: notes ?? null
         }
@@ -161,11 +155,9 @@ export async function cashAdvance(prisma, actor, { tellerId, collectorId, amount
 // balance after the write — see header note on the post-write SUM check.
 // ===========================================================================
 
-export async function cashRemit(prisma, actor, { collectorId, amount, notes, password }) {
-  await verifyUserPassword(prisma, actor.id, password)
-
+export async function cashRemit(prisma, actor, { collectorCode, amount, notes }) {
   const amountString = toMoneyString(amount)
-  await findActiveCollector(prisma, collectorId)
+  const collector = await findActiveCollectorByCode(prisma, collectorCode)
 
   // Resolve the actor's User row for the response payload (display name,
   // role check). We allow any authenticated user to remit because the
@@ -190,7 +182,7 @@ export async function cashRemit(prisma, actor, { collectorId, amount, notes, pas
           tellerId: actor.id,
           type: 'REMIT',
           amount: negate(amountString),
-          collectorId,
+          collectorId: collector.id,
           code,
           notes: notes ?? null
         }

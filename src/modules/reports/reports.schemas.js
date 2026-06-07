@@ -72,7 +72,7 @@ const tellerCommissionRowSchema = {
     winningStake: { type: 'string' },
     // Subset of grossHandle on bets that ended LOST.
     losingStake: { type: 'string' },
-    // The headline metric: SUM(bet.stake × (fight.commissionRate / 2)). Because
+    // The headline metric: SUM(bet.stake × fight.commissionRate). Because
     // the rate is snapshotted per fight, this is correct even if the
     // commission rate has been changed mid-session.
     commissionGenerated: { type: 'string' }
@@ -121,7 +121,7 @@ const fightCommissionRowSchema = {
     grossHandle: { type: 'string', description: 'meronPool + walaPool at report time.' },
     commission: {
       type: 'string',
-      description: 'House commission (SETTLED MERON/WALA: grossHandle × commissionRate / 2).'
+      description: 'House commission (grossHandle × commissionRate; zero for cancelled / draw).'
     },
     betCount: { type: 'integer', minimum: 0 },
     pendingBetCount: { type: 'integer', minimum: 0 },

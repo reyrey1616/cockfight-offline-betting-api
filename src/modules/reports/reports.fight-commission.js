@@ -1,17 +1,19 @@
 // Per-fight commission projection helpers (pure — testable without DB).
 
 /**
- * House commission for a settled MERON/WALA fight.
- * Matches `computePoolDistributable` / settlement: rate/2 of total pool.
+ * House commission for a fight row in the dashboard.
+ * Reported as total handle (both sides) × snapshotted commission rate.
+ * Zero for cancelled fights and settled draw/refund outcomes.
  */
 export function computeFightCommission(grossHandle, commissionRate, status, outcome) {
-  if (status !== 'SETTLED') return 0
-  if (outcome !== 'MERON' && outcome !== 'WALA') return 0
+  if (status === 'CANCELLED') return 0
+  if (status === 'SETTLED' && outcome !== 'MERON' && outcome !== 'WALA') return 0
+
   const gross = Number(grossHandle)
   const rate = Number(commissionRate)
   if (!Number.isFinite(gross) || gross <= 0) return 0
   if (!Number.isFinite(rate)) return 0
-  return gross * (rate / 2)
+  return gross * rate
 }
 
 export function toMoney(v) {

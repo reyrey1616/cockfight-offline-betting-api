@@ -10,7 +10,7 @@
 // values. A dedicated SettingHistory table is overkill for one field;
 // promote to one only if multi-field audit is ever required.
 
-import { InvariantError } from '../../lib/errors.js'
+import { InvariantError, NotFoundError } from '../../lib/errors.js'
 
 const SINGLETON_ID = 'singleton'
 
@@ -61,4 +61,19 @@ function sameRate(a, b) {
   if (a === b) return true
   if (a == null || b == null) return false
   return Number(a.toString()) === Number(b.toString())
+}
+
+/**
+ * Plaintext admin password for CODE128 void authorization at teller kiosks.
+ * Caller must enforce ADMIN role — this only loads the row.
+ */
+export async function getAdminVoidBarcode(prisma, userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId } })
+  if (!user) {
+    throw new NotFoundError('User not found')
+  }
+  if (typeof user.password !== 'string' || user.password.length === 0) {
+    throw new InvariantError('Admin account has no password on file')
+  }
+  return { username: user.username, barcodeValue: user.password }
 }

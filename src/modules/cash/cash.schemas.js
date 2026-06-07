@@ -9,6 +9,9 @@
 
 const cuidPattern = '^[a-z0-9]{20,32}$'
 
+// 8-char public collector barcode: "COL" + 5 reduced-alphabet chars.
+const collectorCodePattern = '^COL[A-Z0-9]{5}$'
+
 // 8-char ledger barcode: "ADV…" (cash advance) or "REM…" (remit).
 // Bet-related ledger rows have `code: null` — their printable code is
 // on the related Bet via `betId → bet.code`.
@@ -59,7 +62,7 @@ const ledgerEntrySchema = {
 
 export const cashAdvanceRequestSchema = {
   type: 'object',
-  required: ['collectorId', 'amount', 'password'],
+  required: ['collectorCode', 'amount'],
   additionalProperties: false,
   properties: {
     tellerId: {
@@ -68,7 +71,11 @@ export const cashAdvanceRequestSchema = {
       description:
         'Receiving teller (ADMIN only). Tellers omit this — the deposit is always recorded on their own drawer.'
     },
-    collectorId: { type: 'string', pattern: cuidPattern, description: 'Collector handing the cash — must be active.' },
+    collectorCode: {
+      type: 'string',
+      pattern: collectorCodePattern,
+      description: 'Scanned collector badge barcode ("COL…") — must be active.'
+    },
     amount: {
       type: 'number',
       exclusiveMinimum: AMOUNT_MIN_EXCLUSIVE,
@@ -76,14 +83,7 @@ export const cashAdvanceRequestSchema = {
       multipleOf: 0.01,
       description: 'Positive amount (max 1,000,000) with at most 2 decimals.'
     },
-    notes: { type: 'string', maxLength: 200 },
-    password: {
-      type: 'string',
-      minLength: 1,
-      maxLength: 200,
-      description:
-        'Step-up password for the bearer (admin recording an advance, or teller confirming a deposit to their drawer).'
-    }
+    notes: { type: 'string', maxLength: 200 }
   }
 }
 
@@ -104,10 +104,14 @@ export const cashAdvanceResponseSchema = {
 
 export const cashRemitRequestSchema = {
   type: 'object',
-  required: ['collectorId', 'amount', 'password'],
+  required: ['collectorCode', 'amount'],
   additionalProperties: false,
   properties: {
-    collectorId: { type: 'string', pattern: cuidPattern, description: 'Collector receiving the cash — must be active.' },
+    collectorCode: {
+      type: 'string',
+      pattern: collectorCodePattern,
+      description: 'Scanned collector badge barcode ("COL…") — must be active.'
+    },
     amount: {
       type: 'number',
       exclusiveMinimum: AMOUNT_MIN_EXCLUSIVE,
@@ -115,13 +119,7 @@ export const cashRemitRequestSchema = {
       multipleOf: 0.01,
       description: 'Positive amount being remitted (recorded as a negative on the ledger).'
     },
-    notes: { type: 'string', maxLength: 200 },
-    password: {
-      type: 'string',
-      minLength: 1,
-      maxLength: 200,
-      description: 'Step-up password for the remitting teller (re-prove identity before cash leaves the drawer).'
-    }
+    notes: { type: 'string', maxLength: 200 }
   }
 }
 

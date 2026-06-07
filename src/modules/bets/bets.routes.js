@@ -255,12 +255,15 @@ export default async function betsRoutes(app) {
           'the **original** teller (cash returns from the same drawer it ' +
           'entered).\n\n' +
           '### Hard rule\n' +
-          '**A bet can only be voided while its parent fight is `OPEN`.** ' +
-          'The moment betting closes (`CLOSED`), and for every state after ' +
-          '(`SETTLED`, `CANCELLED`), this endpoint returns **409**. This ' +
-          'check is re-validated *inside* the row-locked transaction, so ' +
-          'an admin closing the fight a millisecond before this call ' +
-          'arrives is still honored. Admin overrides do not bypass it.\n\n' +
+          '**A bet can only be voided while its parent fight is `OPEN` or ' +
+          '`LAST_CALL`.** Once betting closes (`CLOSED`), and for every ' +
+          'state after (`SETTLED`, `CANCELLED`), this endpoint returns ' +
+          '**409**. This check is re-validated *inside* the row-locked ' +
+          'transaction.\n\n' +
+          '### Step-up authorization\n' +
+          'Body must include `adminPassword` — an active admin login ' +
+          'password scanned from the void authorization barcode. Wrong ' +
+          'password returns **403** (does not invalidate the teller JWT).\n\n' +
           '### Authorization\n' +
           'The original teller who took the bet, or any admin. A different ' +
           'teller trying to void someone else\'s ticket gets a 403.\n\n' +

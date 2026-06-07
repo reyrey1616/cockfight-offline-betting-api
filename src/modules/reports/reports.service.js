@@ -8,19 +8,18 @@
 // a flat `commissionRate` of the ENTIRE pool before distributing the
 // remainder to the winning side. So for any settled fight:
 //
-//     houseCommission(fight) = (totalPool × commissionRate) / 2
+//     houseCommission(fight) = totalPool × commissionRate
 //
-// Because commission comes off the gross pool PROPORTIONALLY, every
-// peso of stake — regardless of which side it was on or whether it
-// won — contributed `commissionRate` pesos of commission. Therefore:
+// Each peso of stake contributed `commissionRate` pesos of attributed
+// commission in reports. Therefore:
 //
 //     tellerCommission(fight, teller)
-//       = (teller's stake on fight) × (commissionRate / 2)
+//       = (teller's stake on fight) × commissionRate
 //
 // And summing across fights:
 //
 //     tellerCommission(teller, scope)
-//       = SUM_over_bets( bet.stake × (bet.fight.commissionRate / 2) )
+//       = SUM_over_bets( bet.stake × bet.fight.commissionRate )
 //
 // The commission rate is SNAPSHOTTED onto each Fight row at create
 // time. So this math is correct even if the admin changed
@@ -51,7 +50,7 @@
 
 import { Prisma } from '@prisma/client'
 
-import { addMoney, toMoney } from './reports.fight-commission.js'
+import { addMoney, computeFightCommission, toMoney } from './reports.fight-commission.js'
 
 // ===========================================================================
 // Build a Prisma SQL fragment for the time-range / fight filter.
@@ -87,7 +86,7 @@ export async function getTellerCommissions(prisma, rawQuery = {}) {
     buildFilters({ since, until, fightId, includeInactive })
 
   // Single GROUP BY against Bet ⋈ Fight ⋈ User. The
-  // SUM(b.amount * (f."commissionRate" / 2)) aggregate is impossible to
+  // SUM(b.amount * f."commissionRate") aggregate is impossible to
   // express with Prisma's typed `groupBy` API (it only does
   // single-column SUMs), so we drop to $queryRaw. Identifiers are
   // literals; values are parameterized through Prisma.sql template
@@ -112,7 +111,7 @@ export async function getTellerCommissions(prisma, rawQuery = {}) {
       COALESCE(SUM(b.amount),                                                          0)   AS "grossHandle",
       COALESCE(SUM(CASE WHEN b.status IN ('WON', 'PAID') THEN b.amount ELSE 0 END),    0)   AS "winningStake",
       COALESCE(SUM(CASE WHEN b.status = 'LOST'           THEN b.amount ELSE 0 END),    0)   AS "losingStake",
-      COALESCE(SUM(b.amount * (f."commissionRate" / 2)),                               0)   AS "commissionGenerated"
+      COALESCE(SUM(b.amount * f."commissionRate"),                               0)   AS "commissionGenerated"
     FROM "User" u
     JOIN "Bet"   b ON b."tellerId" = u.id
     JOIN "Fight" f ON f.id         = b."fightId"
@@ -214,10 +213,9 @@ export async function getFightCommissions(prisma, rawQuery = {}) {
     const grossHandle = toMoney(r.grossHandle)
     const status = r.status
     const outcome = r.outcome
-    const commission =
-      status === 'SETTLED' && (outcome === 'MERON' || outcome === 'WALA')
-        ? toMoney(Number(r.grossHandle) * (Number(r.commissionRate) / 2))
-        : '0.00'
+    const commission = toMoney(
+      computeFightCommission(r.grossHandle, r.commissionRate, status, outcome)
+    )
 
     return {
       fightId: r.fightId,

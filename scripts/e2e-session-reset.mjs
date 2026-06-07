@@ -237,10 +237,9 @@ async function main() {
     body: {
       tellerId: (await api('GET', `/users?role=TELLER`, { token: adminToken }))
         .data.users.find(u => u.username === tellerUser).id,
-      collectorId: collector.id,
-      amount: '500.00',
-      notes: 'session-reset E2E setup',
-      password: ADMIN_PASSWORD
+      collectorCode: collector.code,
+      amount: 500,
+      notes: 'session-reset E2E setup'
     }
   })
   assert(r.status === 201, `Cash advance to teller → 201 (got ${r.status} ${JSON.stringify(r.data).slice(0,200)})`)

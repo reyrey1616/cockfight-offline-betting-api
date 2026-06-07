@@ -42,7 +42,7 @@ export default async function reportsRoutes(app) {
           'pesos of commission regardless of whether it won or lost. So:\n\n' +
           '```\n' +
           'commissionGenerated(teller) =\n' +
-          '  SUM_over_bets( bet.stake × (bet.fight.commissionRate / 2) )\n' +
+          '  SUM_over_bets( bet.stake × bet.fight.commissionRate )\n' +
           '```\n\n' +
           'The rate is SNAPSHOTTED per fight, so this is correct even if ' +
           '`Setting.commissionRate` is changed mid-session.\n\n' +
@@ -89,7 +89,7 @@ export default async function reportsRoutes(app) {
         summary: 'Per-fight house commission (admin)',
         description:
           'Admin-only. Returns one row per fight with gross handle (frozen pools) ' +
-          'and house commission (SETTLED MERON/WALA only: gross × commissionRate / 2). ' +
+          'and house commission (grossHandle × snapshotted commissionRate; zero for cancelled / draw). ' +
           'Sorted by fight number descending.\n\n' +
           'SUM(fights[i].commission) should match realized commission for the session. ' +
           'Refresh when `FIGHT_SETTLED`, `FIGHT_CORRECTED`, or `FIGHT_CANCELLED` fires on `/ws`.',

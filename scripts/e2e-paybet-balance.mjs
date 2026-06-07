@@ -74,7 +74,7 @@ async function main() {
   // Top up teller
   let r = await api('POST', '/cash/advances', {
     token: adminToken,
-    body: { tellerId: teller.id, collectorId: collector.id, amount: 1000, password: 'admin2026@' }
+    body: { tellerId: teller.id, collectorCode: collector.code, amount: 1000 }
   })
   if (r.status !== 201) throw new Error(`advance failed: ${JSON.stringify(r.data)}`)
   const balanceBeforeBet = Number(r.data.actorBalance)
@@ -112,16 +112,15 @@ async function main() {
   // Need a second teller for the opposing bet — create one quick
   const stamp2 = Date.now().toString().slice(-5)
   const otherUsername = `teller${stamp2}o`
-  await api('POST', '/users', { token: adminToken, body: { username: otherUsername, fullName: 'Opposing Teller', role: 'TELLER', password: 'teller12345' } })
+  await api('POST', '/users', { token: adminToken, body: { username: otherUsername, fullName: 'Opposing Teller', role: 'TELLER' } })
   const otherToken = await login(otherUsername, 'teller12345')
   // Advance + bet on WALA
   await api('POST', '/cash/advances', {
     token: adminToken,
     body: {
       tellerId: (await api('GET', '/auth/me', { token: otherToken })).data.user.id,
-      collectorId: collector.id,
-      amount: 500,
-      password: 'admin2026@'
+      collectorCode: collector.code,
+      amount: 500
     }
   })
   r = await api('POST', '/bets', {

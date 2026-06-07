@@ -205,12 +205,20 @@ export const betCodeParamsSchema = {
 export const voidBetRequestSchema = {
   type: 'object',
   additionalProperties: false,
+  required: ['adminPassword'],
   properties: {
+    adminPassword: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 256,
+      description:
+        'Active admin login password — scanned from the void authorization barcode at the teller kiosk.'
+    },
     reason: {
       type: 'string',
       minLength: 1,
       maxLength: 200,
-      description: 'Optional free-text reason. Required by policy if the actor is an admin voiding another teller\'s bet.'
+      description: 'Optional free-text reason for the void.'
     }
   }
 }

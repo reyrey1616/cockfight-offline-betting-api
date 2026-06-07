@@ -1,16 +1,18 @@
 // Routes for the settings module.
 //
 // Surface
-//   GET    /settings    bearer   read the singleton
-//   PATCH  /settings    admin    update commission rate (audit-logged)
+//   GET    /settings                  bearer   read the singleton
+//   PATCH  /settings                  admin    update commission rate (audit-logged)
+//   GET    /settings/admin-void-barcode admin  admin password for void barcode
 //
 // No WebSocket broadcast on PATCH. Settings changes do NOT take effect on
 // any currently-OPEN fight — each fight snapshotted its rate at creation,
 // so there's nothing time-critical for kiosks to react to. The admin UI
 // can fetch on demand.
 
-import { getSetting, updateSetting } from './settings.service.js'
+import { getAdminVoidBarcode, getSetting, updateSetting } from './settings.service.js'
 import {
+  adminVoidBarcodeResponseSchema,
   getSettingsResponseSchema,
   updateSettingsRequestSchema,
   updateSettingsResponseSchema
@@ -105,5 +107,33 @@ export default async function settingsRoutes(app) {
 
       return { setting: after }
     }
+  )
+
+  // -------------------------------------------------------------------------
+  // GET /settings/admin-void-barcode
+  // -------------------------------------------------------------------------
+  app.get(
+    '/admin-void-barcode',
+    {
+      preHandler: adminOnly,
+      schema: {
+        tags,
+        summary: 'Admin void authorization barcode payload',
+        description:
+          'Admin-only. Returns the logged-in admin\'s plaintext login password ' +
+          'so the settings UI can render a CODE128 barcode for teller void ' +
+          'authorization. Passwords are stored plaintext in this deployment.',
+        operationId: 'settingsAdminVoidBarcode',
+        security,
+        response: {
+          ...adminVoidBarcodeResponseSchema,
+          401: errorResponses[401],
+          403: errorResponses[403],
+          404: errorResponses[404],
+          500: errorResponses[500]
+        }
+      }
+    },
+    async (request) => getAdminVoidBarcode(request.server.prisma, request.user.id)
   )
 }
