@@ -12,7 +12,7 @@
 // to 2 decimals before they hit the wire / DB.
 
 import { BadRequestError } from './errors.js'
-import { computePoolDistributable } from './odds.js'
+import { computePoolDistributable, floorPayoutMultiplier } from './odds.js'
 
 const SETTLED_TERMINAL_OUTCOMES = ['MERON', 'WALA', 'DRAW']
 
@@ -33,9 +33,12 @@ function toMoneyString(n) {
   return round2(n).toFixed(2)
 }
 
-// Payout ratios: floored to 2 decimals (matches live board / payout math).
+// Payout ratios: same floor rule as live board (scale ×100, floor 2 dp, ÷100).
 function toRatioString(n) {
-  return (Math.floor(n * 100) / 100).toFixed(2)
+  const m = floorPayoutMultiplier(n)
+  if (m == null) return null
+  const s = m.toFixed(4)
+  return s.replace(/\.?0+$/, '') || '0'
 }
 
 // ---------------------------------------------------------------------------

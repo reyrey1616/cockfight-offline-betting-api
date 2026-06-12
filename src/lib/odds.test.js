@@ -11,7 +11,7 @@ describe('computeLiveOdds', () => {
       commissionRate: '0.10'
     })
     assert.equal(meronOdds, 1.71)
-    assert.equal(walaOdds, 2.13)
+    assert.equal(walaOdds, 2.1375)
   })
 
   it('matches pool distributable formula (commission/2 of total handle)', () => {
@@ -20,8 +20,8 @@ describe('computeLiveOdds', () => {
       walaPool: '10310',
       commissionRate: '0.15'
     })
-    assert.equal(meronOdds, 1.64)
-    assert.equal(walaOdds, 2.11)
+    assert.equal(meronOdds, 1.6431)
+    assert.equal(walaOdds, 2.1164)
   })
 
   it('returns null for a side with zero pool', () => {

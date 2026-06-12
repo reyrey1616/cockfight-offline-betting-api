@@ -14,7 +14,7 @@
 // Example: meronPool = 1000, walaPool = 800, commissionRate = 0.10
 //   total = 1800, houseTake = 1800 * 0.05 = 90, distributable = 1710
 //   meronOdds = 1710 / 1000 = 1.71
-//   walaOdds  = 1710 / 800  = 2.1375 → floored to 2.13
+//   walaOdds  = 1710 / 800  = 2.1375 → scaled 213.75 (display), mult 2.1375
 //
 // Edge cases:
 //   - If a side's pool is 0, its odds are returned as null (no bets exist on
@@ -22,8 +22,8 @@
 //   - If the opposing pool is 0, the lone side's odds are (1 - commission/2)
 //     because house take is still commission/2 of that side's pool.
 //
-// Rounding: floored to 2 decimal places so displayed odds never exceed payout
-// math (same rule as frozen settlement ratios).
+// Rounding: ratio × 100, floor scaled value to 2 decimals, ÷ 100 for payout
+// multiplier (same rule as frozen settlement ratios and board display).
 
 const ZERO = 0
 
@@ -39,8 +39,13 @@ function toNumber(decimalLike) {
   return Number(decimalLike)
 }
 
-function floor2(n) {
-  return Math.floor(n * 100) / 100
+/**
+ * Payout multiplier after display scaling: ratio × 100, floor to 2 decimals on
+ * the scaled value, then ÷ 100 (e.g. 1.94257 → 194.25 → 1.9425).
+ */
+export function floorPayoutMultiplier(ratio) {
+  if (ratio == null || !Number.isFinite(ratio)) return null
+  return Math.floor(ratio * 10000) / 10000
 }
 
 /** Pool left for winners after house take (commissionRate / 2 of total handle). */
@@ -62,8 +67,8 @@ export function computeLiveOdds(fight) {
   const commission = toNumber(fight.commissionRate)
   const distributable = computePoolDistributable(meron, wala, commission)
 
-  const meronOdds = meron > 0 ? floor2(distributable / meron) : null
-  const walaOdds = wala > 0 ? floor2(distributable / wala) : null
+  const meronOdds = meron > 0 ? floorPayoutMultiplier(distributable / meron) : null
+  const walaOdds = wala > 0 ? floorPayoutMultiplier(distributable / wala) : null
 
   return { meronOdds, walaOdds }
 }

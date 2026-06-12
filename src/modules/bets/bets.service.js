@@ -288,14 +288,28 @@ export async function listBets(prisma, actor, query = {}) {
     tellerId: isAdmin(actor) ? query.tellerId ?? undefined : actor.id
   }
 
-  const bets = await prisma.bet.findMany({
+  const rows = await prisma.bet.findMany({
     where,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit,
+    include: { fight: true },
     ...(query.cursor ? { skip: 1, cursor: { id: query.cursor } } : {})
   })
 
-  const nextCursor = bets.length === limit ? bets[bets.length - 1].id : null
+  const bets = rows.map(({ fight, ...bet }) => {
+    const summary = projectBetFightSummary(fight)
+    return {
+      ...bet,
+      fightNumber: summary.fightNumber,
+      fightStatus: summary.status,
+      meronOdds: summary.meronOdds,
+      walaOdds: summary.walaOdds,
+      payoutRatioMeron: summary.payoutRatioMeron,
+      payoutRatioWala: summary.payoutRatioWala
+    }
+  })
+
+  const nextCursor = rows.length === limit ? rows[rows.length - 1].id : null
   return { bets, nextCursor }
 }
 

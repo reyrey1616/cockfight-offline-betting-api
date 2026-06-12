@@ -148,12 +148,41 @@ export const listBetsQuerySchema = {
   }
 }
 
+// List rows extend the bet projection with joined fight context for dashboards.
+const betListItemSchema = {
+  allOf: [
+    betSchema,
+    {
+      type: 'object',
+      required: [
+        'fightNumber',
+        'fightStatus',
+        'meronOdds',
+        'walaOdds',
+        'payoutRatioMeron',
+        'payoutRatioWala'
+      ],
+      properties: {
+        fightNumber: { type: 'integer' },
+        fightStatus: {
+          type: 'string',
+          enum: ['SCHEDULED', 'OPEN', 'LAST_CALL', 'CLOSED', 'SETTLED', 'CANCELLED']
+        },
+        meronOdds: { type: ['number', 'null'] },
+        walaOdds: { type: ['number', 'null'] },
+        payoutRatioMeron: { type: ['string', 'null'] },
+        payoutRatioWala: { type: ['string', 'null'] }
+      }
+    }
+  ]
+}
+
 export const listBetsResponseSchema = {
   200: {
     type: 'object',
     required: ['bets', 'nextCursor'],
     properties: {
-      bets: { type: 'array', items: betSchema },
+      bets: { type: 'array', items: betListItemSchema },
       nextCursor: {
         type: ['string', 'null'],
         description: 'Cursor for the next page, or null when the result is exhausted.'
