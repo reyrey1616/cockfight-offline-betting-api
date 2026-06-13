@@ -12,18 +12,23 @@
 // See `docs/realtime-events.md` for the full event catalog and the
 // endpoint → broadcast wiring table.
 
+import { computeLiveOdds } from '../../lib/odds.js'
+
 const isoNow = () => new Date().toISOString()
 
 // Shared "data" projection for any frame that talks about a fight. Keeping
 // it in one place prevents OPENED / CLOSED / SETTLED / CANCELLED / CREATED
 // shapes from drifting over time.
 function fightProjection(fight, extra = {}) {
+  const { meronOdds, walaOdds } = computeLiveOdds(fight)
   return {
     fightId: fight.id,
     fightNumber: fight.fightNumber,
     status: fight.status,
     meronPool: fight.meronPool,
     walaPool: fight.walaPool,
+    meronOdds,
+    walaOdds,
     meronAcceptingBets: fight.meronAcceptingBets,
     walaAcceptingBets: fight.walaAcceptingBets,
     ...extra

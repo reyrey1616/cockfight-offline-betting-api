@@ -136,7 +136,7 @@ export default async function fightsRoutes(app) {
         summary: 'List fights',
         description:
           'Returns fights in descending `fightNumber` order. Filters: ' +
-          '`status` (exact), `current=true` (only `OPEN`, `LAST_CALL`, and `CLOSED`). ' +
+          '`status` (exact), `current=true` (`OPEN`, `LAST_CALL`, `CLOSED`, and `SETTLED` — newest first for kiosk display). ' +
           'Cursor-based pagination — pass `nextCursor` from the ' +
           'previous response as `cursor`.',
         operationId: 'fightsList',

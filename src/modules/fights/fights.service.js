@@ -167,8 +167,10 @@ export async function listFights(prisma, query = {}) {
     // Legacy SCHEDULED rows are intentionally excluded — new fights are
     // never written in SCHEDULED and kiosks shouldn't pick up dead rows
     // from before that change.
+    // Include SETTLED so kiosks keep showing the fight just declared until a
+    // newer one opens — otherwise a stale CLOSED row (lower fightNumber) wins.
     ...(query.current
-      ? { status: { in: ['OPEN', 'LAST_CALL', 'CLOSED'] } }
+      ? { status: { in: ['OPEN', 'LAST_CALL', 'CLOSED', 'SETTLED'] } }
       : {})
   }
 
