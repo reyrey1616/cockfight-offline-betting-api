@@ -293,7 +293,11 @@ export async function listLedger(prisma, actor, query = {}) {
     where,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit,
-    ...(query.cursor ? { skip: 1, cursor: { id: query.cursor } } : {})
+    ...(query.cursor ? { skip: 1, cursor: { id: query.cursor } } : {}),
+    include: {
+      bet: { include: { fight: true } },
+      collector: { select: { name: true } }
+    }
   })
 
   return {
@@ -328,7 +332,7 @@ export async function getLedgerEntryByCode(prisma, actor, code) {
 // stringify automatically via JSON, but we explicitly toString the
 // amount to avoid the receiver getting the Decimal class wrapper.
 export function projectLedgerEntry(row) {
-  return {
+  const entry = {
     id: row.id,
     code: row.code ?? null,
     tellerId: row.tellerId,
@@ -336,8 +340,25 @@ export function projectLedgerEntry(row) {
     amount: row.amount.toFixed(2),
     betId: row.betId ?? null,
     collectorId: row.collectorId ?? null,
+    collectorName: row.collector?.name ?? null,
     adjustedByUserId: row.adjustedByUserId ?? null,
     notes: row.notes ?? null,
     createdAt: row.createdAt
+  }
+
+  const bet = row.bet
+  if (!bet) return entry
+
+  const fight = bet.fight
+  return {
+    ...entry,
+    betAmount: bet.amount.toFixed(2),
+    betSide: bet.side,
+    betPayoutAmount:
+      bet.payoutAmount != null ? bet.payoutAmount.toFixed(2) : null,
+    payoutRatioMeron:
+      fight?.payoutRatioMeron != null ? String(fight.payoutRatioMeron) : null,
+    payoutRatioWala:
+      fight?.payoutRatioWala != null ? String(fight.payoutRatioWala) : null
   }
 }

@@ -50,9 +50,15 @@ const ledgerEntrySchema = {
     amount: { type: 'string', description: 'Signed 2-decimal amount. Positive = cash IN, negative = cash OUT.' },
     betId: { type: ['string', 'null'] },
     collectorId: { type: ['string', 'null'] },
+    collectorName: { type: ['string', 'null'], description: 'Collector label for CASH_ADVANCE / REMIT rows.' },
     adjustedByUserId: { type: ['string', 'null'] },
     notes: { type: ['string', 'null'] },
-    createdAt: { type: 'string', format: 'date-time' }
+    createdAt: { type: 'string', format: 'date-time' },
+    betAmount: { type: ['string', 'null'], description: 'Stake when `betId` is set.' },
+    betSide: { type: ['string', 'null'], description: 'MERON or WALA when `betId` is set.' },
+    betPayoutAmount: { type: ['string', 'null'], description: 'Winning payout when `betId` is set.' },
+    payoutRatioMeron: { type: ['string', 'null'] },
+    payoutRatioWala: { type: ['string', 'null'] }
   }
 }
 
