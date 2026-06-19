@@ -31,14 +31,14 @@ const betSchema = {
     tellerInitialsSnapshot: { type: 'string' },
     amount: { type: 'string', description: 'Decimal as string (e.g. "500.00").' },
     side: { type: 'string', enum: ['MERON', 'WALA'] },
-    status: { type: 'string', enum: ['PENDING', 'WON', 'LOST', 'PAID', 'VOIDED', 'REFUNDED'] },
+    status: { type: 'string', enum: ['PENDING', 'WON', 'LOST', 'PAID', 'VOIDED', 'PENDING_REFUND', 'REFUNDED'] },
     payoutAmount: { type: ['string', 'null'], description: 'Frozen at settlement. Null for losing / voided / refunded / still-pending bets.' },
     paidAt: { type: ['string', 'null'], format: 'date-time' },
     paidByUserId: { type: ['string', 'null'] },
     voidedAt: { type: ['string', 'null'], format: 'date-time' },
     voidedByUserId: { type: ['string', 'null'] },
     voidReason: { type: ['string', 'null'] },
-    previousStatus: { type: ['string', 'null'], enum: ['PENDING', 'WON', 'LOST', 'PAID', 'VOIDED', 'REFUNDED', null] },
+    previousStatus: { type: ['string', 'null'], enum: ['PENDING', 'WON', 'LOST', 'PAID', 'VOIDED', 'PENDING_REFUND', 'REFUNDED', null] },
     previousPayoutAmount: { type: ['string', 'null'] },
     correctedAt: { type: ['string', 'null'], format: 'date-time' },
     createdAt: { type: 'string', format: 'date-time' },
@@ -140,7 +140,7 @@ export const listBetsQuerySchema = {
     fightId: { type: 'string', pattern: cuidPattern },
     // Tellers are forced to their own id server-side; the param is here for admins.
     tellerId: { type: 'string', pattern: cuidPattern },
-    status: { type: 'string', enum: ['PENDING', 'WON', 'LOST', 'PAID', 'VOIDED', 'REFUNDED'] },
+    status: { type: 'string', enum: ['PENDING', 'WON', 'LOST', 'PAID', 'VOIDED', 'PENDING_REFUND', 'REFUNDED'] },
     side: { type: 'string', enum: ['MERON', 'WALA'] },
     since: { type: 'string', format: 'date-time', description: 'Only bets created at or after this timestamp.' },
     limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
@@ -241,7 +241,7 @@ export const voidBetRequestSchema = {
       minLength: 1,
       maxLength: 256,
       description:
-        'Active admin login password — scanned from the void authorization barcode at the teller kiosk.'
+        'Void authorization secret scanned from the admin void barcode at the teller kiosk.'
     },
     reason: {
       type: 'string',

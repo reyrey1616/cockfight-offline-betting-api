@@ -306,9 +306,9 @@ export async function resumeFightOpen(prisma, id) {
 // Inside one transaction:
 //   1. Lock the fight; require status=CLOSED.
 //   2. Compute payout ratios from frozen pools + snapshotted commission.
-//   3. Update each PENDING bet → WON/LOST/REFUNDED (VOIDED bets untouched).
-//   4. Append BET_REFUNDED ledger entries on DRAW refunds.
-//   5. Stamp settledAt + outcome + payoutRatios on the fight.
+//   3. Update each PENDING bet → WON/LOST/PENDING_REFUND (VOIDED bets untouched).
+//      Draw/cancel refunds stay PENDING_REFUND until paid at payout desk.
+//   4. Stamp settledAt + outcome + payoutRatios on the fight.
 //
 // This is the largest transaction in the system. Bet count is bounded by
 // what fits in a session (~hundreds), well within TX_TIMEOUT_MS for an
@@ -368,8 +368,8 @@ export async function settleFight(prisma, id, { outcome }) {
 // ===========================================================================
 // POST /fights/:id/cancel — SCHEDULED|OPEN|CLOSED → CANCELLED
 //
-// All PENDING bets become REFUNDED with payoutAmount = stake, and each
-// gets a BET_REFUNDED ledger entry on its original teller. VOIDED bets
+// All PENDING bets become PENDING_REFUND with payoutAmount = stake.
+// Cash is deducted when each refund is paid at the payout desk. VOIDED bets
 // are untouched.
 // ===========================================================================
 

@@ -8,8 +8,9 @@ enum BetStatus {
   WON      // settled in favor of this ticket; awaiting redemption
   LOST     // settled against this ticket
   PAID     // winning ticket redeemed and paid out
-  VOIDED   // cancelled by teller/admin before settlement
-  REFUNDED // fight cancelled / draw / no-contest
+  VOIDED         // cancelled by teller/admin before settlement
+  PENDING_REFUND // draw/cancelled — stake returned at payout desk
+  REFUNDED       // refund paid out at payout desk (or legacy auto-refund rows)
 }
 
 model Bet {

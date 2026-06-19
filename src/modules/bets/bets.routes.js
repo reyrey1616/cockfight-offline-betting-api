@@ -6,7 +6,7 @@
 //   GET    /bets/{id}         single bet by id (any auth — scope enforced)
 //   GET    /bets/code/{code}  single bet by public ticket code (any auth)
 //   POST   /bets/{id}/void    void a PENDING bet while its fight is OPEN
-//   POST   /bets/{id}/pay     pay out a WON bet (any auth — cashier window)
+//   POST   /bets/{id}/pay     pay out WON or pending-refund bet (any auth — cashier window)
 //
 // Errors are mapped by the global error-handler plugin:
 //   NotFound → 404, Forbidden → 403, Conflict → 409,
@@ -186,9 +186,9 @@ export default async function betsRoutes(app) {
           'Redemption-counter lookup. Any authenticated user can resolve any ' +
           'ticket code — the cashier scenario assumes the customer brings ' +
           'their slip to whoever is available. Use the returned `status` and ' +
-          '`payoutAmount` to decide what action follows: `WON` → eligible ' +
-          'for `POST /bets/{id}/pay`, `LOST` → no action, `REFUNDED` → ' +
-          'refund the customer, `PAID` → already settled.',
+          '`payoutAmount` to decide what action follows: `WON` or `PENDING_REFUND` → ' +
+          'eligible for `POST /bets/{id}/pay`, `LOST` → no action, `REFUNDED` / `PAID` → ' +
+          'already settled at payout desk.',
         operationId: 'betsGetByCode',
         security,
         params: betCodeParamsSchema,
@@ -261,9 +261,9 @@ export default async function betsRoutes(app) {
           '**409**. This check is re-validated *inside* the row-locked ' +
           'transaction.\n\n' +
           '### Step-up authorization\n' +
-          'Body must include `adminPassword` — an active admin login ' +
-          'password scanned from the void authorization barcode. Wrong ' +
-          'password returns **403** (does not invalidate the teller JWT).\n\n' +
+          'Body must include `adminPassword` — the fixed void authorization secret ' +
+          'scanned from the admin void barcode. Wrong value returns **403** ' +
+          '(does not invalidate the teller JWT).\n\n' +
           '### Authorization\n' +
           'The original teller who took the bet, or any admin. A different ' +
           'teller trying to void someone else\'s ticket gets a 403.\n\n' +
@@ -327,7 +327,7 @@ export default async function betsRoutes(app) {
   )
 
   // -------------------------------------------------------------------------
-  // POST /bets/:id/pay — redeem a WON bet
+  // POST /bets/:id/pay — redeem a WON bet or pay a draw/cancel refund
   // -------------------------------------------------------------------------
   app.post(
     '/:id/pay',
@@ -335,17 +335,17 @@ export default async function betsRoutes(app) {
       preHandler: [app.authenticate],
       schema: {
         tags,
-        summary: 'Pay out a winning bet',
+        summary: 'Pay out a winning bet or refund',
         description:
-          'Cashier action. Marks a `WON` bet as `PAID`, stamps `paidAt` and ' +
-          '`paidByUserId`, and appends a negative `PAYOUT` TellerLedger ' +
-          'entry on the original teller.\n\n' +
+          'Cashier action. Marks a `WON` bet as `PAID` or a `PENDING_REFUND` bet as ' +
+          '`REFUNDED`, stamps `paidAt` and `paidByUserId`, and appends a negative ' +
+          '`PAYOUT` or `BET_REFUNDED` TellerLedger entry on the paying teller.\n\n' +
           '### Authorization\n' +
           'Only the teller who originally took the ticket can pay it out. ' +
           'If scanned by another teller, this endpoint returns 403 with ' +
           '"This ticket is not bet on this teller.".\n\n' +
           '### Idempotency\n' +
-          'Paying an already-`PAID` bet returns the existing record with ' +
+          'Paying an already-`PAID` or already-`REFUNDED` bet returns the existing record with ' +
           '`replay: true` (200). Concurrent pay calls are race-safe via a ' +
           'row-level lock on the bet.',
         operationId: 'betsPay',

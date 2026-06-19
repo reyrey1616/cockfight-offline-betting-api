@@ -3,7 +3,7 @@
 // Surface
 //   GET    /settings                  bearer   read the singleton
 //   PATCH  /settings                  admin    update commission rate (audit-logged)
-//   GET    /settings/admin-void-barcode admin  admin password for void barcode
+//   GET    /settings/admin-void-barcode admin  fixed void authorization barcode
 //
 // No WebSocket broadcast on PATCH. Settings changes do NOT take effect on
 // any currently-OPEN fight — each fight snapshotted its rate at creation,
@@ -120,9 +120,8 @@ export default async function settingsRoutes(app) {
         tags,
         summary: 'Admin void authorization barcode payload',
         description:
-          'Admin-only. Returns the logged-in admin\'s plaintext login password ' +
-          'so the settings UI can render a CODE128 barcode for teller void ' +
-          'authorization. Passwords are stored plaintext in this deployment.',
+          'Admin-only. Returns the fixed void authorization barcode value so the ' +
+          'settings UI can render a CODE128 slip for teller bet cancellation.',
         operationId: 'settingsAdminVoidBarcode',
         security,
         response: {

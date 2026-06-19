@@ -67,7 +67,7 @@ describe('determineBetTargetState', () => {
       { outcome: 'DRAW', payoutRatioMeron: null, payoutRatioWala: null },
       { side: 'WALA', amount: '75.00' }
     )
-    assert.equal(result.targetStatus, 'REFUNDED')
+    assert.equal(result.targetStatus, 'PENDING_REFUND')
     assert.equal(result.targetPayoutAmount, '75.00')
   })
 })
@@ -81,24 +81,23 @@ describe('planSettlementForBet', () => {
     assert.equal(plan.skip, true)
   })
 
-  it('plans refund ledger on draw', () => {
+  it('plans pending refund on draw without ledger', () => {
     const plan = planSettlementForBet(
       { outcome: 'DRAW', payoutRatioMeron: null, payoutRatioWala: null },
       { id: 'b2', status: 'PENDING', amount: '100.00', side: 'MERON', tellerId: 't1' }
     )
-    assert.equal(plan.update.data.status, 'REFUNDED')
-    assert.equal(plan.ledger.type, 'BET_REFUNDED')
-    assert.equal(plan.ledger.amount, '-100.00')
+    assert.equal(plan.update.data.status, 'PENDING_REFUND')
+    assert.equal(plan.ledger, null)
   })
 })
 
 describe('planCancellationForBet', () => {
-  it('refunds pending bets on fight cancel', () => {
+  it('marks pending refund on fight cancel without ledger', () => {
     const plan = planCancellationForBet(
       { id: 'b3', status: 'PENDING', amount: '200.00', tellerId: 't1' },
       { reason: 'weather' }
     )
-    assert.equal(plan.update.data.status, 'REFUNDED')
-    assert.match(plan.ledger.notes, /weather/)
+    assert.equal(plan.update.data.status, 'PENDING_REFUND')
+    assert.equal(plan.ledger, null)
   })
 })

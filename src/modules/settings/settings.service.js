@@ -11,6 +11,7 @@
 // promote to one only if multi-field audit is ever required.
 
 import { InvariantError, NotFoundError } from '../../lib/errors.js'
+import { ADMIN_VOID_BARCODE_VALUE } from '../../lib/admin-void-barcode.js'
 
 const SINGLETON_ID = 'singleton'
 
@@ -64,16 +65,13 @@ function sameRate(a, b) {
 }
 
 /**
- * Plaintext admin password for CODE128 void authorization at teller kiosks.
- * Caller must enforce ADMIN role — this only loads the row.
+ * Fixed void authorization barcode for CODE128 slips at teller kiosks.
+ * Caller must enforce ADMIN role — username is for slip labeling only.
  */
 export async function getAdminVoidBarcode(prisma, userId) {
   const user = await prisma.user.findUnique({ where: { id: userId } })
   if (!user) {
     throw new NotFoundError('User not found')
   }
-  if (typeof user.password !== 'string' || user.password.length === 0) {
-    throw new InvariantError('Admin account has no password on file')
-  }
-  return { username: user.username, barcodeValue: user.password }
+  return { username: user.username, barcodeValue: ADMIN_VOID_BARCODE_VALUE }
 }

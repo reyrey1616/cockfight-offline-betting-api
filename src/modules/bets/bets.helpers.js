@@ -16,6 +16,7 @@ const BET_STATUS_MESSAGES = {
   LOST: 'This ticket lost and cannot be voided.',
   PAID: 'This ticket has already been paid out and cannot be voided.',
   REFUNDED: 'This ticket was refunded and cannot be voided.',
+  PENDING_REFUND: 'This ticket is awaiting refund at the payout desk and cannot be voided.',
   VOIDED: 'This ticket is already voided.'
 }
 

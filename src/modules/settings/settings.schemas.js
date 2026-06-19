@@ -72,12 +72,12 @@ export const adminVoidBarcodeResponseSchema = {
     properties: {
       username: {
         type: 'string',
-        description: 'Admin username (for slip label only; barcode encodes the password).'
+        description: 'Admin username (for slip label only).'
       },
       barcodeValue: {
         type: 'string',
         description:
-          'Plaintext admin login password — encoded as CODE128 for teller void authorization.'
+          'Fixed void authorization secret — encoded as CODE128 for teller bet cancellation.'
       }
     }
   }

@@ -2,6 +2,7 @@ import { adminUser } from '../../lib/user-mapper.js'
 import {
   createUser,
   getUser,
+  getTellerLoginBarcode,
   listUsers,
   resetPassword,
   updateUser
@@ -13,6 +14,7 @@ import {
   listUsersResponseSchema,
   okResponseSchema,
   resetPasswordRequestSchema,
+  tellerLoginBarcodeResponseSchema,
   updateUserRequestSchema,
   userIdParamsSchema,
   userResponseSchema
@@ -122,6 +124,33 @@ export default async function usersRoutes(app) {
       const user = await getUser(request.server.prisma, request.params.id)
       return { user: adminUser(user) }
     }
+  )
+
+  app.get(
+    '/:id/barcode',
+    {
+      preHandler: adminOnly,
+      schema: {
+        tags,
+        summary: 'Teller login barcode payload',
+        description:
+          'Admin-only. Returns the teller\'s plaintext login password so the admin UI ' +
+          'can render a CODE128 badge for kiosk sign-in. Passwords are stored plaintext ' +
+          'in this deployment. Only active TELLER accounts are supported.',
+        operationId: 'usersTellerLoginBarcode',
+        security,
+        params: userIdParamsSchema,
+        response: {
+          ...tellerLoginBarcodeResponseSchema,
+          400: errorResponses[400],
+          401: errorResponses[401],
+          403: errorResponses[403],
+          404: errorResponses[404],
+          500: errorResponses[500]
+        }
+      }
+    },
+    async (request) => getTellerLoginBarcode(request.server.prisma, request.params.id)
   )
 
   app.patch(

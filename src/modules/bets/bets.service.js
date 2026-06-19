@@ -254,6 +254,19 @@ function assertCanPayBet(actor, bet) {
   throw new ForbiddenError('This ticket is not bet on this teller.')
 }
 
+function assertRefundFightEligible(fight) {
+  if (fight.status === 'CANCELLED') return
+  if (fight.status === 'SETTLED' && fight.outcome === 'DRAW') return
+  throw new ConflictError('Refund payout is only available for cancelled or draw fights', {
+    fightStatus: fight.status,
+    fightOutcome: fight.outcome ?? null
+  })
+}
+
+function payoutAmountString(amount) {
+  return typeof amount === 'object' && amount !== null ? amount.toString() : String(amount)
+}
+
 // Convert a numeric / string / Decimal value to a negative Decimal string
 // suitable for ledger entries. Magnitudes here are bounded (max 1,000,000),
 // so Number precision is safe.
@@ -509,22 +522,13 @@ export async function voidBet(prisma, actor, betId, { reason, adminPassword } = 
 }
 
 // ===========================================================================
-// POST /bets/:id/pay — redeem a winning ticket
+// POST /bets/:id/pay — redeem a winning ticket or pay a draw/cancel refund
 //
 // Transaction:
 //   1. Lock the bet row (we don't change the pool, just the bet).
-//   2. If already PAID, return as idempotent replay.
-//   3. If status !== 'WON' or payoutAmount is null, conflict.
-//   4. Update bet: status=PAID, paidAt/paidByUserId.
-//   5. Append PAYOUT ledger entry (negative, on the PAYING teller's
-//      balance per schema comment — could be a different teller from the
-//      original bet-taker).
-//
-// Failure surface:
-//   - 404 NotFoundError       — bet does not exist
-//   - 409 ConflictError       — bet not in WON state
-//   - 408 RequestTimeoutError — transaction timed out
-//   - 500 InvariantError      — WON bet has no payoutAmount (data corruption)
+//   2. If already PAID / REFUNDED (with paidAt), return as idempotent replay.
+//   3. WON → PAID + PAYOUT ledger; PENDING_REFUND → REFUNDED + BET_REFUNDED ledger.
+//   4. Append ledger on the PAYING teller's balance.
 // ===========================================================================
 
 export async function payBet(prisma, actor, betId) {
@@ -537,9 +541,6 @@ export async function payBet(prisma, actor, betId) {
   assertCanPayBet(actor, existing)
 
   if (existing.status === 'PAID') {
-    // For replay we already know who got the original PAYOUT ledger row
-    // (paidByUserId on the bet). Return their CURRENT balance — which
-    // may have moved since the original payment. No broadcast on replay.
     const balance = await computeTellerBalance(prisma, existing.paidByUserId ?? actor.id)
     return {
       bet: existing,
@@ -549,17 +550,32 @@ export async function payBet(prisma, actor, betId) {
       balanceBroadcast: null
     }
   }
-  if (existing.status !== 'WON') {
+  if (existing.status === 'REFUNDED') {
+    const balance = await computeTellerBalance(prisma, existing.paidByUserId ?? actor.id)
+    return {
+      bet: existing,
+      fight: projectBetFightSummary(existing.fight),
+      replay: true,
+      actorBalance: balance,
+      balanceBroadcast: null
+    }
+  }
+
+  const isWinPayout = existing.status === 'WON'
+  const isRefundPayout = existing.status === 'PENDING_REFUND'
+  if (!isWinPayout && !isRefundPayout) {
     throw new ConflictError(
-      'Only WON bets can be paid out',
+      'Only WON or pending-refund tickets can be paid out',
       { betStatus: existing.status }
     )
+  }
+  if (isRefundPayout) {
+    assertRefundFightEligible(existing.fight)
   }
 
   let result
   try {
     result = await prisma.$transaction(async (tx) => {
-      // 2. Lock the bet row.
       const locked = await tx.$queryRaw`
         SELECT id FROM "Bet" WHERE id = ${betId} FOR UPDATE
       `
@@ -567,72 +583,88 @@ export async function payBet(prisma, actor, betId) {
         throw new InvariantError('Bet vanished after FOR UPDATE')
       }
 
-      // 3. Re-read under the lock.
       const bet = await tx.bet.findUnique({
         where: { id: betId },
         include: { fight: true }
       })
       if (!bet) throw new InvariantError('Bet vanished after lock')
 
-      // 4. Handle concurrent pay-out — second caller becomes a replay.
-      if (bet.status === 'PAID') {
-        return { bet, fight: bet.fight, replay: true }
+      if (bet.status === 'PAID' || bet.status === 'REFUNDED') {
+        return { bet, fight: bet.fight, replay: true, payoutKind: null, payoutAmount: null }
       }
-      if (bet.status !== 'WON') {
+
+      const winPayout = bet.status === 'WON'
+      const refundPayout = bet.status === 'PENDING_REFUND'
+      if (!winPayout && !refundPayout) {
         throw new ConflictError(
-          'Only WON bets can be paid out',
+          'Only WON or pending-refund tickets can be paid out',
           { betStatus: bet.status }
         )
       }
+      if (refundPayout) {
+        assertRefundFightEligible(bet.fight)
+      }
       if (bet.payoutAmount == null) {
-        throw new InvariantError('WON bet is missing a payoutAmount — settlement bug')
+        throw new InvariantError(
+          `${winPayout ? 'WON' : 'PENDING_REFUND'} bet is missing a payoutAmount — settlement bug`
+        )
       }
 
-      // 5. Mutate.
+      const paidAt = new Date()
       const updatedBet = await tx.bet.update({
         where: { id: betId },
         data: {
-          status: 'PAID',
-          paidAt: new Date(),
+          status: refundPayout ? 'REFUNDED' : 'PAID',
+          paidAt,
           paidByUserId: actor.id
         },
         include: { fight: true }
       })
 
-      // 6. Ledger entry: PAYOUT debits whoever is at the redemption
-      //    counter (actor.id) — NOT necessarily the original bet-taker.
+      const cashOut = payoutAmountString(bet.payoutAmount)
       await tx.tellerLedger.create({
         data: {
           tellerId: actor.id,
-          type: 'PAYOUT',
-          amount: negateAmount(bet.payoutAmount),
-          betId: bet.id
+          type: refundPayout ? 'BET_REFUNDED' : 'PAYOUT',
+          amount: negateAmount(cashOut),
+          betId: bet.id,
+          ...(refundPayout
+            ? {
+                notes:
+                  bet.fight.status === 'CANCELLED'
+                    ? 'Refund paid at payout desk (fight cancelled)'
+                    : 'Refund paid at payout desk (fight draw)'
+              }
+            : {})
         }
       })
 
-      const payoutAmountString =
-        typeof bet.payoutAmount === 'object' && bet.payoutAmount !== null
-          ? bet.payoutAmount.toString()
-          : String(bet.payoutAmount)
       const balance = await computeTellerBalance(tx, actor.id)
       if (Number(balance) < 0) {
-        throw new ConflictError('Payout amount exceeds your current balance', {
-          currentBalanceBeforePayout: (
-            Number(balance) + Number(payoutAmountString)
-          ).toFixed(2),
-          requestedPayout: payoutAmountString,
-          shortfall: (-Number(balance)).toFixed(2)
-        })
+        throw new ConflictError(
+          refundPayout
+            ? 'Refund amount exceeds your current balance'
+            : 'Payout amount exceeds your current balance',
+          {
+            currentBalanceBeforePayout: (Number(balance) + Number(cashOut)).toFixed(2),
+            requestedPayout: cashOut,
+            shortfall: (-Number(balance)).toFixed(2)
+          }
+        )
       }
 
-      return { bet: updatedBet, fight: updatedBet.fight, replay: false }
+      return {
+        bet: updatedBet,
+        fight: updatedBet.fight,
+        replay: false,
+        payoutKind: refundPayout ? 'REFUND' : 'WIN',
+        payoutAmount: cashOut
+      }
     }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
   } catch (err) {
     rethrowPrismaTransactionError(err)
   }
 
-  // Affected teller for pay = the actor (whoever physically handed over
-  // the payout cash from their drawer), not the original bet-taker.
   const balance = await computeTellerBalance(prisma, actor.id)
 
   return {
@@ -646,8 +678,8 @@ export async function payBet(prisma, actor, betId) {
           tellerId: actor.id,
           tellerName: actor.fullName,
           delta: {
-            type: 'PAYOUT',
-            amount: (-Number(result.bet.payoutAmount)).toFixed(2)
+            type: result.payoutKind === 'REFUND' ? 'BET_REFUNDED' : 'PAYOUT',
+            amount: (-Number(result.payoutAmount)).toFixed(2)
           }
         }
   }

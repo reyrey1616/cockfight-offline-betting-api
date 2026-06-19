@@ -114,7 +114,7 @@ export function computePayoutRatios({ meronPool, walaPool, commissionRate, outco
  *
  * Returns { targetStatus, targetPayoutAmount }.
  *
- *   targetStatus       one of WON | LOST | REFUNDED
+ *   targetStatus       one of WON | LOST | PENDING_REFUND
  *   targetPayoutAmount string ("123.45") | null
  *
  * Caller is responsible for stamping previousStatus / previousPayoutAmount
@@ -123,7 +123,10 @@ export function computePayoutRatios({ meronPool, walaPool, commissionRate, outco
  */
 export function determineBetTargetState({ outcome, payoutRatioMeron, payoutRatioWala }, bet) {
   if (outcome === 'DRAW') {
-    return { targetStatus: 'REFUNDED', targetPayoutAmount: toMoneyString(toNumber(bet.amount)) }
+    return {
+      targetStatus: 'PENDING_REFUND',
+      targetPayoutAmount: toMoneyString(toNumber(bet.amount))
+    }
   }
 
   if (bet.side === outcome) {
@@ -159,9 +162,9 @@ export function determineBetTargetState({ outcome, payoutRatioMeron, payoutRatio
  *   { skip: true }                                   ← bet is VOIDED, leave it
  *   { update: { where, data }, ledger?: { ... } }    ← apply this
  *
- * Ledger entries are emitted ONLY for refunds (DRAW). Winning
- * bets get their PAYOUT entry later, at redemption time. Losing bets have
- * no cash movement.
+ * Ledger entries for draw/cancel refunds happen at payout-desk redemption,
+ * not here. Winning bets get PAYOUT at redemption; losing bets have no cash
+ * movement.
  */
 export function planSettlementForBet(ratios, bet) {
   if (bet.status === 'VOIDED') return { skip: true }
@@ -173,32 +176,24 @@ export function planSettlementForBet(ratios, bet) {
 
   const { targetStatus, targetPayoutAmount } = determineBetTargetState(ratios, bet)
 
-  const data = {
-    status: targetStatus,
-    payoutAmount: targetPayoutAmount
-  }
-
-  const isRefund = targetStatus === 'REFUNDED'
-
   return {
-    update: { where: { id: bet.id }, data },
-    ledger: isRefund
-      ? {
-          tellerId: bet.tellerId,
-          type: 'BET_REFUNDED',
-          amount: `-${toMoneyString(toNumber(bet.amount))}`,
-          betId: bet.id,
-          notes: 'Fight settled as draw'
-        }
-      : null
+    update: {
+      where: { id: bet.id },
+      data: {
+        status: targetStatus,
+        payoutAmount: targetPayoutAmount
+      }
+    },
+    ledger: null
   }
 }
 
 // ---------------------------------------------------------------------------
 // Per-bet update plan for CANCELLATION
 //
-// Every PENDING bet becomes REFUNDED with payoutAmount = stake. VOIDED bets
-// were already returned to the customer pre-settlement; do not touch them.
+// Every PENDING bet becomes PENDING_REFUND with payoutAmount = stake.
+// Cash on hand is debited when the ticket is paid out at the payout desk.
+// VOIDED bets were already returned to the customer pre-settlement; do not touch them.
 // ---------------------------------------------------------------------------
 
 export function planCancellationForBet(bet, { reason } = {}) {
@@ -210,15 +205,9 @@ export function planCancellationForBet(bet, { reason } = {}) {
   return {
     update: {
       where: { id: bet.id },
-      data: { status: 'REFUNDED', payoutAmount: amount }
+      data: { status: 'PENDING_REFUND', payoutAmount: amount }
     },
-    ledger: {
-      tellerId: bet.tellerId,
-      type: 'BET_REFUNDED',
-      amount: `-${amount}`,
-      betId: bet.id,
-      notes: reason ? `Fight cancelled: ${reason}` : 'Fight cancelled'
-    }
+    ledger: null
   }
 }
 
@@ -234,14 +223,14 @@ export function planCancellationForBet(bet, { reason } = {}) {
 //     to the new target derived from the new outcome.
 //
 // No ledger entries are emitted from corrections automatically. Refunds
-// that result from a CORRECTION (e.g. WON→REFUNDED) DO need ledger
-// entries, so we emit BET_REFUNDED in that case. WON→LOST flips do NOT
-// need ledger entries (no cash moved). LOST→WON also does not move cash
-// until the cashier redeems the now-winning ticket.
+// that result from a correction (e.g. WON→PENDING_REFUND) are paid at the
+// payout desk. WON→LOST flips do NOT need ledger entries (no cash moved).
+// LOST→WON also does not move cash until the cashier redeems the now-winning ticket.
 // ---------------------------------------------------------------------------
 
 export function planCorrectionForBet(ratios, bet, { reason } = {}) {
   if (bet.status === 'VOIDED') return { skip: true }
+  if (bet.status === 'REFUNDED') return { skip: true }
 
   const { targetStatus, targetPayoutAmount } = determineBetTargetState(ratios, bet)
 
@@ -278,24 +267,9 @@ export function planCorrectionForBet(ratios, bet, { reason } = {}) {
     correctedAt
   }
 
-  // Only emit a refund ledger entry if this correction TURNS the bet
-  // INTO a refund (e.g. outcome changed to DRAW). Previously-refunded
-  // bets that stay refunded already have their ledger entry from the
-  // original settlement.
-  const newlyBecomesRefund =
-    targetStatus === 'REFUNDED' && bet.status !== 'REFUNDED'
-
   return {
     update: { where: { id: bet.id }, data },
-    ledger: newlyBecomesRefund
-      ? {
-          tellerId: bet.tellerId,
-          type: 'BET_REFUNDED',
-          amount: `-${toMoneyString(toNumber(bet.amount))}`,
-          betId: bet.id,
-          notes: reason ? `Fight correction: ${reason}` : 'Fight correction → refund'
-        }
-      : null
+    ledger: null
   }
 }
 

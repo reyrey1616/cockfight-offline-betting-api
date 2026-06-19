@@ -4,9 +4,10 @@
   "main": "src/server.js",
   "type": "module",
   "scripts": {
-    "dev": "nodemon src/server.js",
+    "dev": "prisma generate && nodemon src/server.js",
     "start": "node src/server.js",
-    "db:migrate": "prisma migrate deploy",
+    "db:migrate": "prisma migrate deploy && prisma generate",
+    "postinstall": "prisma generate",
     "seed": "node prisma/seed.js",
     "test": "node --test src/lib/*.test.js src/modules/cash/*.test.js src/modules/bets/*.test.js src/modules/reports/*.test.js"
   },

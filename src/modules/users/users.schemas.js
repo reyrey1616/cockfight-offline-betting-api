@@ -105,3 +105,23 @@ export const okResponseSchema = {
   required: ['ok'],
   properties: { ok: { type: 'boolean' } }
 }
+
+export const tellerLoginBarcodeResponseSchema = {
+  200: {
+    type: 'object',
+    required: ['username', 'fullName', 'initials', 'barcodeValue'],
+    properties: {
+      username: {
+        type: 'string',
+        description: 'Teller username (printed on the slip; barcode encodes the password).'
+      },
+      fullName: { type: 'string' },
+      initials: { type: 'string', pattern: '^[A-Z]{3}$' },
+      barcodeValue: {
+        type: 'string',
+        description:
+          'Plaintext teller login password — encoded as CODE128 for kiosk sign-in badges.'
+      }
+    }
+  }
+}
