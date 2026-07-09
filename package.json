@@ -9,6 +9,8 @@
     "db:migrate": "prisma migrate deploy && prisma generate",
     "postinstall": "prisma generate",
     "seed": "node prisma/seed.js",
+    "sync:supabase": "node scripts/sync-to-supabase.mjs",
+    "sync:supabase:status": "node scripts/sync-to-supabase.mjs --status",
     "test": "node --test src/lib/*.test.js src/modules/cash/*.test.js src/modules/bets/*.test.js src/modules/reports/*.test.js"
   },
   "keywords": [],

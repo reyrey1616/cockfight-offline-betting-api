@@ -171,7 +171,13 @@ const betListItemSchema = {
         meronOdds: { type: ['number', 'null'] },
         walaOdds: { type: ['number', 'null'] },
         payoutRatioMeron: { type: ['string', 'null'] },
-        payoutRatioWala: { type: ['string', 'null'] }
+        payoutRatioWala: { type: ['string', 'null'] },
+        fightEndedAt: {
+          type: ['string', 'null'],
+          format: 'date-time',
+          description:
+            'When the fight was settled or cancelled — used by dashboards to age off unpaid payout rows.'
+        }
       }
     }
   ]

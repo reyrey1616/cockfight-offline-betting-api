@@ -78,6 +78,10 @@ Allow inbound **TCP 8000** on the server from the LAN subnet.
 curl http://192.168.1.6:8000/documentation
 ```
 
+## 9. Optional Supabase backup sync
+
+See [SUPABASE-SYNC.md](./SUPABASE-SYNC.md). Local Postgres stays the live database; Supabase is synced when internet is available.
+
 Replace with your server IP. Should return HTML (Swagger UI) or JSON, not connection refused.
 
 ## 9. Electron kiosks (CORS)

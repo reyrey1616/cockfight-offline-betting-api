@@ -311,6 +311,7 @@ export async function listBets(prisma, actor, query = {}) {
 
   const bets = rows.map(({ fight, ...bet }) => {
     const summary = projectBetFightSummary(fight)
+    const fightEndedAt = fight.settledAt ?? fight.cancelledAt ?? null
     return {
       ...bet,
       fightNumber: summary.fightNumber,
@@ -318,7 +319,8 @@ export async function listBets(prisma, actor, query = {}) {
       meronOdds: summary.meronOdds,
       walaOdds: summary.walaOdds,
       payoutRatioMeron: summary.payoutRatioMeron,
-      payoutRatioWala: summary.payoutRatioWala
+      payoutRatioWala: summary.payoutRatioWala,
+      fightEndedAt: fightEndedAt ? fightEndedAt.toISOString() : null
     }
   })
 

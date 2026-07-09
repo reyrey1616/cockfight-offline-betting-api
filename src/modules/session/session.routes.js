@@ -1,9 +1,11 @@
 // Routes for the session module.
 //
 // Surface
-//   GET   /session/preview   admin   read-only "what would be wiped now?"
-//   POST  /session/reset     admin   wipe Fight + Bet + TellerLedger
-//   GET   /session/resets    admin   audit log (paginated)
+//   GET   /session/preview        admin   read-only "what would be wiped now?"
+//   POST  /session/reset          admin   wipe Fight + Bet + TellerLedger
+//   GET   /session/resets         admin   audit log (paginated)
+//   GET   /session/sync-status    admin   Supabase backup mirror status
+//   POST  /session/sync-supabase  admin   push local DB snapshot to Supabase
 //
 // All three are admin-only — there is no scenario where a teller should
 // touch any of these endpoints. The preview is admin-only too because
@@ -19,10 +21,16 @@ import {
   listSessionResetsResponseSchema,
   resetSessionRequestSchema,
   resetSessionResponseSchema,
-  sessionPreviewResponseSchema
+  sessionPreviewResponseSchema,
+  supabaseSyncResponseSchema,
+  supabaseSyncStatusResponseSchema
 } from './session.schemas.js'
 import { buildSessionResetPayload } from './session.events.js'
 import { errorResponses } from '../../lib/api-schemas.js'
+import {
+  getSupabaseSyncStatus,
+  syncLocalToSupabase
+} from '../../lib/supabase-sync.js'
 
 const tags = ['Session']
 const security = [{ bearerAuth: [] }]
@@ -207,5 +215,71 @@ export default async function sessionRoutes(app) {
       }
     },
     async (request) => listResets(request.server.prisma, request.query)
+  )
+
+  // -------------------------------------------------------------------------
+  // GET /session/sync-status — Supabase backup mirror status
+  // -------------------------------------------------------------------------
+  app.get(
+    '/sync-status',
+    {
+      preHandler: adminOnly,
+      schema: {
+        tags,
+        summary: 'Supabase sync status (admin)',
+        description:
+          'Read-only. Shows whether Supabase backup sync is configured, whether ' +
+          'Supabase is reachable right now, and the last sync attempt result. ' +
+          'Local operations do not depend on Supabase.',
+        operationId: 'sessionSupabaseSyncStatus',
+        security,
+        response: {
+          ...supabaseSyncStatusResponseSchema,
+          401: errorResponses[401],
+          403: errorResponses[403],
+          500: errorResponses[500]
+        }
+      }
+    },
+    async () => getSupabaseSyncStatus()
+  )
+
+  // -------------------------------------------------------------------------
+  // POST /session/sync-supabase — push local snapshot to Supabase
+  // -------------------------------------------------------------------------
+  app.post(
+    '/sync-supabase',
+    {
+      preHandler: adminOnly,
+      schema: {
+        tags,
+        summary: 'Sync local database to Supabase (admin)',
+        description:
+          'Mirrors the local PostgreSQL database to Supabase when internet is ' +
+          'available. Live betting always uses local `DATABASE_URL` — this endpoint ' +
+          'is for backup / remote reporting only.\n\n' +
+          'Operational tables (`Fight`, `Bet`, `TellerLedger`) are truncated on ' +
+          'Supabase first, then repopulated from local so session resets stay aligned.',
+        operationId: 'sessionSupabaseSync',
+        security,
+        response: {
+          ...supabaseSyncResponseSchema,
+          401: errorResponses[401],
+          403: errorResponses[403],
+          500: errorResponses[500]
+        }
+      }
+    },
+    async (request) => {
+      try {
+        const result = await syncLocalToSupabase()
+        request.log.info({ counts: result.counts }, 'Manual Supabase sync completed')
+        return result
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        request.log.warn({ err: msg }, 'Manual Supabase sync skipped')
+        return { ok: false, message: msg }
+      }
+    }
   )
 }

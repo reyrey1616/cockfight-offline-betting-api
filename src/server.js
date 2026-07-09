@@ -17,6 +17,7 @@ import cashRoutes from './modules/cash/cash.routes.js'
 import sessionRoutes from './modules/session/session.routes.js'
 import { checkSessionResetSchemaIntegrity } from './modules/session/session.service.js'
 import reportsRoutes from './modules/reports/reports.routes.js'
+import supabaseSyncPlugin from './plugins/supabase-sync.plugin.js'
 
 dotenv.config()
 
@@ -60,6 +61,7 @@ export async function buildServer() {
   // every route's schema as they are added.
   await app.register(swaggerPlugin)
   await app.register(websocketPlugin)
+  await app.register(supabaseSyncPlugin)
 
   await app.register(authRoutes, { prefix: '/auth' })
   await app.register(usersRoutes, { prefix: '/users' })

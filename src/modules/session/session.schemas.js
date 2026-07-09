@@ -213,3 +213,45 @@ export const listSessionResetsResponseSchema = {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// GET /session/sync-status — Supabase mirror status (admin)
+// POST /session/sync-supabase — push local DB snapshot to Supabase (admin)
+// ---------------------------------------------------------------------------
+
+const syncCountsSchema = {
+  type: 'object',
+  additionalProperties: { type: 'integer', minimum: 0 }
+}
+
+export const supabaseSyncStatusResponseSchema = {
+  200: {
+    type: 'object',
+    required: ['configured', 'enabled', 'autoSyncMinutes', 'supabaseReachable', 'lastSync'],
+    properties: {
+      configured: { type: 'boolean' },
+      enabled: { type: 'boolean' },
+      autoSyncMinutes: { type: 'integer', minimum: 0 },
+      supabaseReachable: { type: ['boolean', 'null'] },
+      lastSync: {
+        type: ['object', 'null'],
+        additionalProperties: true
+      }
+    }
+  }
+}
+
+export const supabaseSyncResponseSchema = {
+  200: {
+    type: 'object',
+    required: ['ok'],
+    properties: {
+      ok: { type: 'boolean' },
+      dryRun: { type: 'boolean' },
+      syncedAt: { type: 'string', format: 'date-time' },
+      finishedAt: { type: 'string', format: 'date-time' },
+      counts: syncCountsSchema,
+      message: { type: 'string' }
+    }
+  }
+}
