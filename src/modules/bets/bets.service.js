@@ -7,6 +7,11 @@
 
 import { verifyAdminPassword } from '../auth/auth.service.js'
 import { evaluateBetVoidEligibility } from './bets.helpers.js'
+import {
+  computeCommissionDrop,
+  isPurgeableBetStatus,
+  planPurgeCashAdjustments
+} from './bets.purge.js'
 import { generateTicketCode } from '../../lib/ticket-code.js'
 import { projectBetFightSummary } from '../../lib/bet-fight-summary.js'
 import { rethrowPrismaTransactionError } from '../../lib/prisma-tx.js'
@@ -281,6 +286,31 @@ function negateAmount(amount) {
 const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 200
 
+const BET_STATUS_VALUES = new Set([
+  'PENDING',
+  'WON',
+  'LOST',
+  'PAID',
+  'VOIDED',
+  'PENDING_REFUND',
+  'REFUNDED'
+])
+
+/** Support `status` or comma-separated `statuses` (e.g. WON,LOST,PAID). */
+function parseStatusFilter(query) {
+  if (query.statuses != null && String(query.statuses).trim() !== '') {
+    const list = String(query.statuses)
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => BET_STATUS_VALUES.has(s))
+    if (list.length === 0) return undefined
+    if (list.length === 1) return list[0]
+    return { in: [...new Set(list)] }
+  }
+  if (query.status) return query.status
+  return undefined
+}
+
 export async function listBets(prisma, actor, query = {}) {
   const limit = Math.min(Math.max(Number(query.limit ?? DEFAULT_LIMIT), 1), MAX_LIMIT)
 
@@ -292,9 +322,11 @@ export async function listBets(prisma, actor, query = {}) {
     }
   }
 
+  const statusFilter = parseStatusFilter(query)
+
   const where = {
     ...(query.fightId ? { fightId: query.fightId } : {}),
-    ...(query.status ? { status: query.status } : {}),
+    ...(statusFilter ? { status: statusFilter } : {}),
     ...(query.side ? { side: query.side } : {}),
     ...(query.since ? { createdAt: { gte: new Date(query.since) } } : {}),
     // Force the teller scope for non-admins.
@@ -320,6 +352,8 @@ export async function listBets(prisma, actor, query = {}) {
       walaOdds: summary.walaOdds,
       payoutRatioMeron: summary.payoutRatioMeron,
       payoutRatioWala: summary.payoutRatioWala,
+      commissionRate:
+        fight.commissionRate != null ? fight.commissionRate.toFixed(4) : null,
       fightEndedAt: fightEndedAt ? fightEndedAt.toISOString() : null
     }
   })
@@ -684,5 +718,151 @@ export async function payBet(prisma, actor, betId) {
             amount: (-Number(result.payoutAmount)).toFixed(2)
           }
         }
+  }
+}
+
+// ===========================================================================
+// DELETE /bets/:id/purge — admin hard-delete for commission adjustment
+//
+// Intentional post-settle bookkeeping rewrite:
+//   1. Allowed only for PAID bets on SETTLED fights.
+//   2. Deletes all TellerLedger rows with this betId (clears FK Restrict).
+//   3. Deletes the Bet row (teller commission drops).
+//   4. Writes compensating ADJUSTMENT ledger rows so cash on hand only
+//      drops by the dashboard commission (stake × rate / 2) for the
+//      bet-taker — not by the full stake / payout swing.
+//   5. Does NOT change Fight.meronPool / walaPool / payout ratios.
+// ===========================================================================
+
+export async function purgeBet(prisma, actor, betId) {
+  if (!isAdmin(actor)) {
+    throw new ForbiddenError('Only admins may purge bets')
+  }
+
+  const existing = await prisma.bet.findUnique({
+    where: { id: betId },
+    include: { fight: true }
+  })
+  if (!existing) throw new NotFoundError('Bet not found')
+
+  if (!isPurgeableBetStatus(existing.status)) {
+    throw new ConflictError(
+      `Only PAID bets can be purged (got ${existing.status}).`,
+      { betStatus: existing.status }
+    )
+  }
+
+  if (existing.fight.status !== 'SETTLED') {
+    throw new ConflictError(
+      'Bet purge is only allowed after the fight is SETTLED.',
+      { fightStatus: existing.fight.status }
+    )
+  }
+
+  const ledgerRows = await prisma.tellerLedger.findMany({
+    where: { betId },
+    select: { id: true, tellerId: true, type: true, amount: true }
+  })
+
+  const commission = computeCommissionDrop(existing.amount, existing.fight.commissionRate)
+  const cashPlan = planPurgeCashAdjustments({
+    betTellerId: existing.tellerId,
+    dashboardCommissionDrop: commission.dashboardCommissionDrop,
+    ledgerRows: ledgerRows.map((r) => ({ tellerId: r.tellerId, amount: r.amount }))
+  })
+
+  const tellerIdsAffected = [...new Set(cashPlan.map((r) => r.tellerId))]
+
+  const balancesBefore = {}
+  for (const tid of tellerIdsAffected) {
+    balancesBefore[tid] = await computeTellerBalance(prisma, tid)
+  }
+
+  let deletedLedgerCount = 0
+  const adjustmentsWritten = []
+  try {
+    await prisma.$transaction(
+      async (tx) => {
+        const bet = await tx.bet.findUnique({ where: { id: betId } })
+        if (!bet) throw new NotFoundError('Bet not found')
+        if (!isPurgeableBetStatus(bet.status)) {
+          throw new ConflictError(
+            `Only PAID bets can be purged (got ${bet.status}).`,
+            { betStatus: bet.status }
+          )
+        }
+
+        const deleted = await tx.tellerLedger.deleteMany({ where: { betId } })
+        deletedLedgerCount = deleted.count
+        await tx.bet.delete({ where: { id: betId } })
+
+        for (const row of cashPlan) {
+          if (Number(row.adjustmentAmount) === 0) continue
+          await tx.tellerLedger.create({
+            data: {
+              tellerId: row.tellerId,
+              type: 'ADJUSTMENT',
+              amount: row.adjustmentAmount,
+              adjustedByUserId: actor.id,
+              notes:
+                `Bet purge ${existing.code}: net cash to −${commission.dashboardCommissionDrop} ` +
+                `commission (stake ${existing.amount.toFixed(2)} removed from commission reports).`
+            }
+          })
+          adjustmentsWritten.push({
+            tellerId: row.tellerId,
+            amount: row.adjustmentAmount
+          })
+        }
+      },
+      { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS }
+    )
+  } catch (err) {
+    rethrowPrismaTransactionError(err)
+  }
+
+  const balanceBroadcasts = []
+  for (const tid of tellerIdsAffected) {
+    const after = await computeTellerBalance(prisma, tid)
+    const before = balancesBefore[tid] ?? '0.00'
+    const delta = (Number(after) - Number(before)).toFixed(2)
+    balanceBroadcasts.push({
+      tellerId: tid,
+      balanceBefore: before,
+      balanceAfter: after,
+      cashOnHandDelta: delta
+    })
+  }
+
+  return {
+    purged: {
+      betId: existing.id,
+      code: existing.code,
+      tellerId: existing.tellerId,
+      tellerNameSnapshot: existing.tellerNameSnapshot,
+      amount: existing.amount.toFixed(2),
+      side: existing.side,
+      status: existing.status,
+      fightId: existing.fightId,
+      fightNumber: existing.fight.fightNumber,
+      commissionRate: existing.fight.commissionRate.toFixed(4)
+    },
+    poolsUnchanged: true,
+    fightCommissionUnchanged: true,
+    deletedLedgerCount,
+    ledgerTypesRemoved: [...new Set(ledgerRows.map((r) => r.type))],
+    adjustmentsWritten,
+    impact: {
+      stakeRemoved: existing.amount.toFixed(2),
+      reportCommissionDrop: commission.reportCommissionDrop,
+      dashboardCommissionDrop: commission.dashboardCommissionDrop,
+      cashByTeller: cashPlan.map((r) => ({
+        tellerId: r.tellerId,
+        ledgerSumRemoved: r.ledgerSumRemoved,
+        cashOnHandDelta: r.cashOnHandDelta,
+        adjustmentAmount: r.adjustmentAmount
+      })),
+      balances: balanceBroadcasts
+    }
   }
 }

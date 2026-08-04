@@ -24,7 +24,7 @@ const isoNow = () => new Date().toISOString()
 
 /**
  * @param {object} args
- * @param {'FIGHT_SETTLED'|'FIGHT_CANCELLED'|'FIGHT_CORRECTED'} args.trigger
+ * @param {'FIGHT_SETTLED'|'FIGHT_CANCELLED'|'FIGHT_CORRECTED'|'FIGHT_UNSETTLED'|'BET_PURGED'} args.trigger
  *   Which fight-lifecycle event mutated realized commission.
  * @param {string} args.fightId
  * @param {number} args.fightNumber  Human-friendly identifier for UI banners.

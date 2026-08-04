@@ -141,6 +141,12 @@ export const listBetsQuerySchema = {
     // Tellers are forced to their own id server-side; the param is here for admins.
     tellerId: { type: 'string', pattern: cuidPattern },
     status: { type: 'string', enum: ['PENDING', 'WON', 'LOST', 'PAID', 'VOIDED', 'PENDING_REFUND', 'REFUNDED'] },
+    statuses: {
+      type: 'string',
+      description:
+        'Comma-separated bet statuses (e.g. "WON,LOST,PAID"). Ignored when empty; ' +
+        'takes precedence over `status` when provided.'
+    },
     side: { type: 'string', enum: ['MERON', 'WALA'] },
     since: { type: 'string', format: 'date-time', description: 'Only bets created at or after this timestamp.' },
     limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
@@ -177,6 +183,10 @@ const betListItemSchema = {
           format: 'date-time',
           description:
             'When the fight was settled or cancelled — used by dashboards to age off unpaid payout rows.'
+        },
+        commissionRate: {
+          type: ['string', 'null'],
+          description: 'Fight snapshotted commission rate (fraction string).'
         }
       }
     }
@@ -300,6 +310,109 @@ export const payBetResponseSchema = {
         description:
           'CURRENT cash balance of the **paying** teller (the actor) — NOT the original ' +
           'bet-taker. Their drawer is what the payout came from.'
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /bets/:id/purge — admin commission adjustment hard-delete
+// ---------------------------------------------------------------------------
+
+export const purgeBetResponseSchema = {
+  200: {
+    type: 'object',
+    required: [
+      'purged',
+      'poolsUnchanged',
+      'fightCommissionUnchanged',
+      'deletedLedgerCount',
+      'ledgerTypesRemoved',
+      'adjustmentsWritten',
+      'impact'
+    ],
+    properties: {
+      purged: {
+        type: 'object',
+        required: [
+          'betId',
+          'code',
+          'tellerId',
+          'amount',
+          'side',
+          'status',
+          'fightId',
+          'fightNumber',
+          'commissionRate'
+        ],
+        properties: {
+          betId: { type: 'string' },
+          code: { type: 'string' },
+          tellerId: { type: 'string' },
+          tellerNameSnapshot: { type: ['string', 'null'] },
+          amount: { type: 'string' },
+          side: { type: 'string', enum: ['MERON', 'WALA'] },
+          status: { type: 'string', enum: ['PAID'] },
+          fightId: { type: 'string' },
+          fightNumber: { type: 'integer' },
+          commissionRate: { type: 'string' }
+        }
+      },
+      poolsUnchanged: { type: 'boolean' },
+      fightCommissionUnchanged: { type: 'boolean' },
+      deletedLedgerCount: { type: 'integer' },
+      ledgerTypesRemoved: { type: 'array', items: { type: 'string' } },
+      adjustmentsWritten: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['tellerId', 'amount'],
+          properties: {
+            tellerId: { type: 'string' },
+            amount: { type: 'string' }
+          }
+        }
+      },
+      impact: {
+        type: 'object',
+        required: [
+          'stakeRemoved',
+          'reportCommissionDrop',
+          'dashboardCommissionDrop',
+          'cashByTeller',
+          'balances'
+        ],
+        properties: {
+          stakeRemoved: { type: 'string' },
+          reportCommissionDrop: { type: 'string' },
+          dashboardCommissionDrop: { type: 'string' },
+          cashByTeller: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['tellerId', 'ledgerSumRemoved', 'cashOnHandDelta', 'adjustmentAmount'],
+              properties: {
+                tellerId: { type: 'string' },
+                ledgerSumRemoved: { type: 'string' },
+                cashOnHandDelta: { type: 'string' },
+                adjustmentAmount: { type: 'string' }
+              }
+            }
+          },
+          balances: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['tellerId', 'balanceBefore', 'balanceAfter', 'cashOnHandDelta'],
+              properties: {
+                tellerId: { type: 'string' },
+                balanceBefore: { type: 'string' },
+                balanceAfter: { type: 'string' },
+                cashOnHandDelta: { type: 'string' }
+              }
+            }
+          }
+        }
       }
     }
   }

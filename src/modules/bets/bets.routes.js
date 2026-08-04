@@ -18,6 +18,7 @@ import {
   listBets,
   payBet,
   placeBet,
+  purgeBet,
   voidBet
 } from './bets.service.js'
 import {
@@ -29,6 +30,7 @@ import {
   payBetResponseSchema,
   placeBetRequestSchema,
   placeBetResponseSchema,
+  purgeBetResponseSchema,
   voidBetRequestSchema,
   voidBetResponseSchema
 } from './bets.schemas.js'
@@ -39,6 +41,7 @@ import {
 // both to fan out after a placement / void / payout.
 import { buildOddsUpdatePayload } from '../fights/fights.events.js'
 import { buildTellerBalanceUpdatedPayload } from '../cash/cash.events.js'
+import { buildTellerCommissionsUpdatedPayload } from '../reports/reports.events.js'
 import { errorResponses } from '../../lib/api-schemas.js'
 
 const tags = ['Bets']
@@ -383,6 +386,84 @@ export default async function betsRoutes(app) {
         replay: result.replay,
         actorBalance: result.actorBalance
       }
+    }
+  )
+
+  // -------------------------------------------------------------------------
+  // DELETE /bets/:id/purge — admin hard-delete (commission / cash adjustment)
+  // -------------------------------------------------------------------------
+  app.delete(
+    '/:id/purge',
+    {
+      preHandler: [app.authenticate, app.requireRole('ADMIN')],
+      schema: {
+        tags,
+        summary: 'Purge a settled paid bet (admin commission adjustment)',
+        description:
+          'Admin-only. Hard-deletes a `PAID` bet on a `SETTLED` fight, ' +
+          'along with every `TellerLedger` row referencing it, then writes ' +
+          'compensating `ADJUSTMENT` rows so cash on hand only drops by the ' +
+          'dashboard commission (`stake × rate / 2`) for the bet-taker.\n\n' +
+          '### What changes\n' +
+          '- Teller commission reports drop by `stake × fight.commissionRate` ' +
+          '(dashboard display uses half of that).\n' +
+          '- Cash on hand for the bet-taker drops by that dashboard commission only.\n\n' +
+          '### What does NOT change\n' +
+          '- `Fight.meronPool` / `walaPool` and frozen payout ratios.\n' +
+          '- Other bets\' `payoutAmount`.\n\n' +
+          'Broadcasts `TELLER_BALANCE_UPDATED` per affected teller and ' +
+          '`TELLER_COMMISSIONS_UPDATED` after commit.',
+        operationId: 'betsPurge',
+        security,
+        params: betIdParamsSchema,
+        response: {
+          ...purgeBetResponseSchema,
+          401: errorResponses[401],
+          403: errorResponses[403],
+          404: errorResponses[404],
+          409: errorResponses[409],
+          500: errorResponses[500]
+        }
+      }
+    },
+    async (request) => {
+      const result = await purgeBet(
+        request.server.prisma,
+        request.user,
+        request.params.id
+      )
+
+      const nameById = new Map()
+      for (const row of result.impact.balances) {
+        if (!nameById.has(row.tellerId)) {
+          const u = await request.server.prisma.user.findUnique({
+            where: { id: row.tellerId },
+            select: { fullName: true }
+          })
+          nameById.set(row.tellerId, u?.fullName ?? row.tellerId)
+        }
+        app.broadcast(
+          buildTellerBalanceUpdatedPayload({
+            tellerId: row.tellerId,
+            tellerName: nameById.get(row.tellerId),
+            balance: row.balanceAfter,
+            delta: {
+              type: 'ADJUSTMENT',
+              amount: row.cashOnHandDelta
+            }
+          })
+        )
+      }
+
+      app.broadcast(
+        buildTellerCommissionsUpdatedPayload({
+          trigger: 'BET_PURGED',
+          fightId: result.purged.fightId,
+          fightNumber: result.purged.fightNumber
+        })
+      )
+
+      return result
     }
   )
 }

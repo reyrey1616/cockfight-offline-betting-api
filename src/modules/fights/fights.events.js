@@ -99,6 +99,18 @@ export function buildFightCorrectedPayload(fight) {
   }
 }
 
+export function buildFightUnsettledPayload(fight) {
+  return {
+    type: 'FIGHT_UNSETTLED',
+    data: fightProjection(fight, {
+      outcome: null,
+      payoutRatioMeron: null,
+      payoutRatioWala: null
+    }),
+    ts: isoNow()
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Per-side bet-acceptance frames
 // ---------------------------------------------------------------------------

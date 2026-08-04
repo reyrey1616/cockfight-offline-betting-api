@@ -278,3 +278,75 @@ function sameMoney(a, b) {
   if (a == null || b == null) return false
   return toNumber(a) === toNumber(b)
 }
+
+// ---------------------------------------------------------------------------
+// Per-bet update plan for UNSETTLE (SETTLED → CLOSED)
+//
+// Rules:
+//   - VOIDED is sticky → no change.
+//   - PAID / REFUNDED block the whole fight unsettle (cash already moved).
+//   - WON / LOST / PENDING_REFUND → PENDING; clear payout + correction fields.
+//   - PENDING (unexpected on a settled fight) → no-op skip.
+// ---------------------------------------------------------------------------
+
+const UNSETTLE_BLOCKING_STATUSES = new Set(['PAID', 'REFUNDED'])
+const UNSETTLE_RESETTABLE_STATUSES = new Set(['WON', 'LOST', 'PENDING_REFUND'])
+
+/**
+ * Aggregate gate before unsettle. Returns counts; caller throws ConflictError
+ * when paidCount or refundedCount > 0.
+ *
+ * @param {Array<{ status: string }>} bets
+ */
+export function assertFightCanUnsettle(bets) {
+  const counts = {
+    paidCount: 0,
+    refundedCount: 0,
+    resettableCount: 0,
+    voidedCount: 0,
+    otherCount: 0
+  }
+  for (const bet of bets) {
+    if (bet.status === 'PAID') counts.paidCount += 1
+    else if (bet.status === 'REFUNDED') counts.refundedCount += 1
+    else if (bet.status === 'VOIDED') counts.voidedCount += 1
+    else if (UNSETTLE_RESETTABLE_STATUSES.has(bet.status)) counts.resettableCount += 1
+    else counts.otherCount += 1
+  }
+  return {
+    ...counts,
+    blocked: counts.paidCount > 0 || counts.refundedCount > 0
+  }
+}
+
+/**
+ * Build the Prisma update payload for a bet during fight unsettle.
+ *
+ * Returns one of:
+ *   { skip: true, reason: 'VOIDED'|'PENDING'|'OTHER' }
+ *   { block: true, reason: 'PAID'|'REFUNDED' }
+ *   { update: { where, data } }
+ */
+export function planUnsettleForBet(bet) {
+  if (bet.status === 'VOIDED') return { skip: true, reason: 'VOIDED' }
+  if (bet.status === 'PENDING') return { skip: true, reason: 'PENDING' }
+  if (UNSETTLE_BLOCKING_STATUSES.has(bet.status)) {
+    return { block: true, reason: bet.status }
+  }
+  if (!UNSETTLE_RESETTABLE_STATUSES.has(bet.status)) {
+    return { skip: true, reason: 'OTHER' }
+  }
+
+  return {
+    update: {
+      where: { id: bet.id },
+      data: {
+        status: 'PENDING',
+        payoutAmount: null,
+        previousStatus: null,
+        previousPayoutAmount: null,
+        correctedAt: null
+      }
+    }
+  }
+}

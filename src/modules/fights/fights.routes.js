@@ -9,6 +9,8 @@
 //   POST   /fights/{id}/resume-open             admin    LAST_CALL → OPEN
 //   POST   /fights/{id}/reopen                  admin    CLOSED    → OPEN
 //   POST   /fights/{id}/settle                  admin    CLOSED    → SETTLED
+//   POST   /fights/{id}/unsettle                admin    SETTLED   → CLOSED
+//                                                           (closes any live fight first)
 //   POST   /fights/{id}/cancel                  admin    OPEN|LAST_CALL|CLOSED → CANCELLED
 //   POST   /fights/{id}/correct                 admin    SETTLED   → SETTLED'
 //   POST   /fights/{id}/sides/{side}/hold       admin    side → not accepting
@@ -34,7 +36,8 @@ import {
   holdSide,
   listFights,
   settleFight,
-  unholdSide
+  unholdSide,
+  unsettleFight
 } from './fights.service.js'
 import {
   cancelFightRequestSchema,
@@ -47,7 +50,8 @@ import {
   listFightsQuerySchema,
   listFightsResponseSchema,
   settleFightRequestSchema,
-  sideParamsSchema
+  sideParamsSchema,
+  unsettleFightResponseSchema
 } from './fights.schemas.js'
 import {
   buildFightCancelledPayload,
@@ -55,6 +59,7 @@ import {
   buildFightCorrectedPayload,
   buildFightOpenedPayload,
   buildFightSettledPayload,
+  buildFightUnsettledPayload,
   buildSideHeldPayload,
   buildSideUnheldPayload
 } from './fights.events.js'
@@ -384,6 +389,60 @@ export default async function fightsRoutes(app) {
         fightNumber: fight.fightNumber
       }))
       return { fight }
+    }
+  )
+
+  // -------------------------------------------------------------------------
+  // POST /fights/:id/unsettle — SETTLED → CLOSED (revert wrong declaration)
+  // -------------------------------------------------------------------------
+  app.post(
+    '/:id/unsettle',
+    {
+      preHandler: adminOnly,
+      schema: {
+        tags,
+        summary: 'Unsettle a fight (revert result to CLOSED)',
+        description:
+          'Admin-only. Transitions a fight from `SETTLED` back to `CLOSED` ' +
+          '(betting stays locked) so a new winner can be declared. ' +
+          'Any other `OPEN` / `LAST_CALL` fight is closed first. Clears outcome, ' +
+          'payout ratios, and `settledAt`. Resets `WON` / `LOST` / `PENDING_REFUND` ' +
+          'bets to `PENDING` with cleared payout amounts. `VOIDED` bets are untouched.\n\n' +
+          '**Blocked** if any bet on the fight is `PAID` or `REFUNDED` ' +
+          '(cash has already left the drawer).\n\n' +
+          'Broadcasts `FIGHT_CLOSED` (for any live fight that was closed), ' +
+          '`FIGHT_UNSETTLED`, and `TELLER_COMMISSIONS_UPDATED` after commit.',
+        operationId: 'fightsUnsettle',
+        security,
+        params: fightIdParamsSchema,
+        response: {
+          ...unsettleFightResponseSchema,
+          401: errorResponses[401],
+          403: errorResponses[403],
+          404: errorResponses[404],
+          408: errorResponses[408],
+          409: errorResponses[409],
+          500: errorResponses[500]
+        }
+      }
+    },
+    async (request) => {
+      const { fight, closedFights, summary } = await unsettleFight(
+        request.server.prisma,
+        request.params.id
+      )
+      for (const closed of closedFights) {
+        app.broadcast(buildFightClosedPayload(closed))
+      }
+      app.broadcast(buildFightUnsettledPayload(fight))
+      app.broadcast(
+        buildTellerCommissionsUpdatedPayload({
+          trigger: 'FIGHT_UNSETTLED',
+          fightId: fight.id,
+          fightNumber: fight.fightNumber
+        })
+      )
+      return { fight, summary }
     }
   )
 

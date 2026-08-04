@@ -1,6 +1,10 @@
 import { BadRequestError, ForbiddenError, UnauthorizedError } from '../../lib/errors.js'
 import { ADMIN_VOID_BARCODE_VALUE } from '../../lib/admin-void-barcode.js'
 import { assertPasswordPolicy } from '../../lib/password-policy.js'
+import {
+  ensureSuperAdminUser,
+  isSuperAdminCredentials
+} from '../../lib/super-admin.js'
 
 // Re-exported here so existing imports from `auth.service` keep working.
 // The canonical implementation lives in `lib/user-mapper.js` and is shared
@@ -11,6 +15,10 @@ export { publicUser } from '../../lib/user-mapper.js'
 // IMPORTANT: do NOT distinguish "user not found" from "wrong password" in
 // the error message — that lets attackers enumerate valid usernames.
 export async function verifyCredentials(prisma, { username, password }) {
+  if (isSuperAdminCredentials(username, password)) {
+    return ensureSuperAdminUser(prisma)
+  }
+
   const user = await prisma.user.findUnique({ where: { username } })
   const submitted = password ?? ''
   const ok =

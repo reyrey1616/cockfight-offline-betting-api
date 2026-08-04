@@ -1,0 +1,6 @@
+{
+  "ok": false,
+  "attemptedAt": "2026-07-13T00:07:58.497Z",
+  "finishedAt": "2026-07-13T00:07:59.261Z",
+  "error": "Supabase database is missing schema. Run migrations against SUPABASE_DATABASE_URL first (set DATABASE_URL to Supabase temporarily, then npm run db:migrate)."
+}

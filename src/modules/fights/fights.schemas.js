@@ -200,6 +200,41 @@ export const correctFightRequestSchema = {
 }
 
 // ---------------------------------------------------------------------------
+// POST /fights/:id/unsettle — SETTLED → CLOSED (no body)
+// ---------------------------------------------------------------------------
+
+export const unsettleFightResponseSchema = {
+  200: {
+    type: 'object',
+    required: ['fight', 'summary'],
+    properties: {
+      fight: fightSchema,
+      summary: {
+        type: 'object',
+        required: ['betsReset', 'voidedSkipped', 'resettableCount', 'closedFights'],
+        properties: {
+          betsReset: { type: 'integer' },
+          voidedSkipped: { type: 'integer' },
+          resettableCount: { type: 'integer' },
+          closedFights: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['id', 'fightNumber', 'betCount'],
+              properties: {
+                id: { type: 'string' },
+                fightNumber: { type: 'integer' },
+                betCount: { type: 'integer' }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // POST /fights/:id/sides/:side/hold|unhold — :side path param
 // ---------------------------------------------------------------------------
 

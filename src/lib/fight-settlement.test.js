@@ -2,11 +2,13 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
+  assertFightCanUnsettle,
   assertValidOutcome,
   computePayoutRatios,
   determineBetTargetState,
   planCancellationForBet,
-  planSettlementForBet
+  planSettlementForBet,
+  planUnsettleForBet
 } from './fight-settlement.js'
 
 describe('computePayoutRatios', () => {
@@ -99,5 +101,70 @@ describe('planCancellationForBet', () => {
     )
     assert.equal(plan.update.data.status, 'PENDING_REFUND')
     assert.equal(plan.ledger, null)
+  })
+})
+
+describe('planUnsettleForBet', () => {
+  it('resets WON / LOST / PENDING_REFUND to PENDING', () => {
+    for (const status of ['WON', 'LOST', 'PENDING_REFUND']) {
+      const plan = planUnsettleForBet({
+        id: 'b4',
+        status,
+        payoutAmount: '150.00',
+        previousStatus: 'LOST',
+        previousPayoutAmount: null,
+        correctedAt: new Date()
+      })
+      assert.equal(plan.update.data.status, 'PENDING')
+      assert.equal(plan.update.data.payoutAmount, null)
+      assert.equal(plan.update.data.previousStatus, null)
+      assert.equal(plan.update.data.correctedAt, null)
+    }
+  })
+
+  it('skips VOIDED and already-PENDING', () => {
+    assert.deepEqual(planUnsettleForBet({ id: 'v', status: 'VOIDED' }), {
+      skip: true,
+      reason: 'VOIDED'
+    })
+    assert.deepEqual(planUnsettleForBet({ id: 'p', status: 'PENDING' }), {
+      skip: true,
+      reason: 'PENDING'
+    })
+  })
+
+  it('blocks PAID and REFUNDED', () => {
+    assert.deepEqual(planUnsettleForBet({ id: 'paid', status: 'PAID' }), {
+      block: true,
+      reason: 'PAID'
+    })
+    assert.deepEqual(planUnsettleForBet({ id: 'ref', status: 'REFUNDED' }), {
+      block: true,
+      reason: 'REFUNDED'
+    })
+  })
+})
+
+describe('assertFightCanUnsettle', () => {
+  it('allows unsettle when only unpaid settled statuses exist', () => {
+    const gate = assertFightCanUnsettle([
+      { status: 'WON' },
+      { status: 'LOST' },
+      { status: 'VOIDED' }
+    ])
+    assert.equal(gate.blocked, false)
+    assert.equal(gate.resettableCount, 2)
+    assert.equal(gate.voidedCount, 1)
+  })
+
+  it('blocks when any PAID or REFUNDED bet exists', () => {
+    const gate = assertFightCanUnsettle([
+      { status: 'WON' },
+      { status: 'PAID' },
+      { status: 'REFUNDED' }
+    ])
+    assert.equal(gate.blocked, true)
+    assert.equal(gate.paidCount, 1)
+    assert.equal(gate.refundedCount, 1)
   })
 })

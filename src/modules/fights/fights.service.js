@@ -32,10 +32,12 @@ import {
 import { rethrowPrismaTransactionError } from '../../lib/prisma-tx.js'
 import { computeLiveOdds } from '../../lib/odds.js'
 import {
+  assertFightCanUnsettle,
   computePayoutRatios,
   planCancellationForBet,
   planCorrectionForBet,
-  planSettlementForBet
+  planSettlementForBet,
+  planUnsettleForBet
 } from '../../lib/fight-settlement.js'
 
 // Transaction budget. `settle` may update hundreds of bets in one
@@ -429,6 +431,140 @@ export async function cancelFight(prisma, id, { reason } = {}) {
 // LOST→WON, etc. do not move physical cash and therefore have no ledger
 // entries.
 // ===========================================================================
+
+// ===========================================================================
+// POST /fights/:id/unsettle — SETTLED → CLOSED (revert wrong declaration)
+//
+// Reverts a wrong declaration when no cash has left for this fight:
+//   - Any OPEN/LAST_CALL fight is closed first (so this fight is current again).
+//   - Fight becomes CLOSED (betting stays locked); outcome / ratios / settledAt cleared.
+//   - WON / LOST / PENDING_REFUND → PENDING (payout cleared).
+//   - VOIDED untouched.
+//   - PAID / REFUNDED → ConflictError (block whole unsettle).
+// ===========================================================================
+
+export async function unsettleFight(prisma, id) {
+  let result
+  try {
+    result = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_FIGHT_OPEN})`
+
+      const fight = await lockFightById(tx, id)
+      if (fight.status !== 'SETTLED') {
+        throw new ConflictError('Only SETTLED fights can be unsettled', {
+          fightStatus: fight.status
+        })
+      }
+
+      // Close any live fight so boards return to this fight as the current CLOSED one.
+      const liveFights = await tx.fight.findMany({
+        where: { status: { in: ['OPEN', 'LAST_CALL'] } },
+        select: { id: true }
+      })
+      const closedFights = []
+      for (const live of liveFights) {
+        const locked = await lockFightById(tx, live.id)
+        if (locked.status !== 'OPEN' && locked.status !== 'LAST_CALL') continue
+        const betCount = await tx.bet.count({
+          where: {
+            fightId: locked.id,
+            status: { not: 'VOIDED' }
+          }
+        })
+        const closed = await tx.fight.update({
+          where: { id: locked.id },
+          data: { status: 'CLOSED', closedAt: new Date() }
+        })
+        closedFights.push({ fight: closed, betCount })
+      }
+
+      const bets = await tx.bet.findMany({
+        where: { fightId: id },
+        select: {
+          id: true,
+          status: true,
+          payoutAmount: true,
+          previousStatus: true,
+          previousPayoutAmount: true,
+          correctedAt: true
+        }
+      })
+
+      const gate = assertFightCanUnsettle(bets)
+      if (gate.blocked) {
+        throw new ConflictError(
+          'Cannot unsettle: one or more tickets were already paid or refunded. ' +
+            'Revert is only allowed before cash leaves the drawer.',
+          {
+            paidCount: gate.paidCount,
+            refundedCount: gate.refundedCount,
+            resettableCount: gate.resettableCount
+          }
+        )
+      }
+
+      let betsReset = 0
+      let voidedSkipped = 0
+      for (const bet of bets) {
+        const plan = planUnsettleForBet(bet)
+        if (plan.block) {
+          throw new ConflictError(
+            `Cannot unsettle: bet ${bet.id} is ${plan.reason}.`,
+            { betId: bet.id, betStatus: plan.reason }
+          )
+        }
+        if (plan.skip) {
+          if (plan.reason === 'VOIDED') voidedSkipped += 1
+          continue
+        }
+        await tx.bet.update(plan.update)
+        betsReset += 1
+      }
+
+      // Clear settle state; stay CLOSED so teller betting remains disabled.
+      const updated = await tx.fight.update({
+        where: { id },
+        data: {
+          status: 'CLOSED',
+          outcome: null,
+          payoutRatioMeron: null,
+          payoutRatioWala: null,
+          settledAt: null,
+          closedAt: fight.closedAt ?? new Date(),
+          previousOutcome: null,
+          previousPayoutRatioMeron: null,
+          previousPayoutRatioWala: null,
+          correctedAt: null,
+          correctedByUserId: null,
+          correctionReason: null
+        }
+      })
+
+      return {
+        fight: updated,
+        closedFights,
+        summary: {
+          betsReset,
+          voidedSkipped,
+          resettableCount: gate.resettableCount,
+          closedFights: closedFights.map(({ fight: f, betCount }) => ({
+            id: f.id,
+            fightNumber: f.fightNumber,
+            betCount
+          }))
+        }
+      }
+    }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
+  } catch (err) {
+    rethrowPrismaTransactionError(err)
+  }
+
+  return {
+    fight: projectFight(result.fight),
+    closedFights: result.closedFights.map(({ fight: f }) => projectFight(f)),
+    summary: result.summary
+  }
+}
 
 export async function correctFight(prisma, actor, id, { outcome, reason }) {
   let updated
