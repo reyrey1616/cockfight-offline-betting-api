@@ -110,9 +110,9 @@ export const listFightsQuerySchema = {
     current: {
       type: 'boolean',
       description:
-        'true → only fights in OPEN, LAST_CALL, or CLOSED (i.e. live or awaiting ' +
-        'settlement). SETTLED / CANCELLED are historical; legacy SCHEDULED ' +
-        'rows are also excluded.'
+        'true → kiosk "current fight" list, not paginated. Order: OPEN/LAST_CALL, ' +
+        'then CLOSED awaiting a winner (oldest first), then SETTLED (newest first). ' +
+        'CANCELLED and legacy SCHEDULED rows are excluded.'
     },
     limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
     cursor: { type: 'string', description: 'Opaque cursor — pass the previous response\'s nextCursor.' }

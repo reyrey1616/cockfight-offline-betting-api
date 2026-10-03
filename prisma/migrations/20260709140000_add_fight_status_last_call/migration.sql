@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "FightStatus" ADD VALUE IF NOT EXISTS 'LAST_CALL' AFTER 'OPEN';

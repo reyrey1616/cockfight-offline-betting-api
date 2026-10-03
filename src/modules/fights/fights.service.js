@@ -122,6 +122,21 @@ export async function createFight(prisma) {
         })
       }
 
+      const undeclared = await tx.fight.findFirst({
+        where: { status: 'CLOSED' },
+        select: { id: true, fightNumber: true }
+      })
+      if (undeclared) {
+        throw new ConflictError(
+          `Fight #${undeclared.fightNumber} is closed with no winner declared yet — ` +
+            'declare a winner or cancel it before opening a new fight.',
+          {
+            closedFightId: undeclared.id,
+            closedFightNumber: undeclared.fightNumber
+          }
+        )
+      }
+
       const setting = await tx.setting.findUnique({ where: { id: 'singleton' } })
       if (!setting) {
         // Defensive — seed.js creates this. If missing, we don't fabricate
@@ -163,18 +178,9 @@ const MAX_LIMIT = 200
 export async function listFights(prisma, query = {}) {
   const limit = Math.min(Math.max(Number(query.limit ?? DEFAULT_LIMIT), 1), MAX_LIMIT)
 
-  const where = {
-    ...(query.status ? { status: query.status } : {}),
-    // `current=true` is the kiosk's "what fight should I show?" filter.
-    // Legacy SCHEDULED rows are intentionally excluded — new fights are
-    // never written in SCHEDULED and kiosks shouldn't pick up dead rows
-    // from before that change.
-    // Include SETTLED so kiosks keep showing the fight just declared until a
-    // newer one opens — otherwise a stale CLOSED row (lower fightNumber) wins.
-    ...(query.current
-      ? { status: { in: ['OPEN', 'LAST_CALL', 'CLOSED', 'SETTLED'] } }
-      : {})
-  }
+  if (query.current) return listCurrentFights(prisma, limit)
+
+  const where = query.status ? { status: query.status } : {}
 
   const rows = await prisma.fight.findMany({
     where,
@@ -187,6 +193,38 @@ export async function listFights(prisma, query = {}) {
     fights: rows.map(projectFight),
     nextCursor: rows.length === limit ? rows[rows.length - 1].id : null
   }
+}
+
+// `current=true` is the kiosk's "what fight should I show?" filter; kiosks
+// render fights[0]. Priority:
+//   1. OPEN / LAST_CALL (at most one).
+//   2. CLOSED awaiting a winner, OLDEST first. More than one CLOSED only
+//      happens after unsettling an older fight (which force-closes the newer
+//      live one) — the reverted fight must be re-declared first.
+//   3. SETTLED, newest first, so the fight just declared stays on screen
+//      until a newer one opens.
+// Legacy SCHEDULED rows are excluded. Not paginated (nextCursor is null).
+async function listCurrentFights(prisma, limit) {
+  const [live, closed, settled] = await Promise.all([
+    prisma.fight.findMany({
+      where: { status: { in: ['OPEN', 'LAST_CALL'] } },
+      orderBy: [{ fightNumber: 'desc' }],
+      take: limit
+    }),
+    prisma.fight.findMany({
+      where: { status: 'CLOSED' },
+      orderBy: [{ fightNumber: 'asc' }],
+      take: limit
+    }),
+    prisma.fight.findMany({
+      where: { status: 'SETTLED' },
+      orderBy: [{ fightNumber: 'desc' }],
+      take: limit
+    })
+  ])
+
+  const rows = [...live, ...closed, ...settled].slice(0, limit)
+  return { fights: rows.map(projectFight), nextCursor: null }
 }
 
 // ===========================================================================

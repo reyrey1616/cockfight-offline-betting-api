@@ -312,7 +312,7 @@ function parseStatusFilter(query) {
 }
 
 export async function listBets(prisma, actor, query = {}) {
-  const limit = Math.min(Math.max(Number(query.limit ?? DEFAULT_LIMIT), 1), MAX_LIMIT)
+  const limit = Math.min(Math.max(Number(query.limit ?? DEFAULT_LIMIT), 1), 1000)
 
   // Tellers may only filter their own bets. If they ask for someone else's
   // explicitly, refuse — silently rewriting would mask client bugs.
@@ -728,9 +728,8 @@ export async function payBet(prisma, actor, betId) {
 //   1. Allowed only for PAID bets on SETTLED fights.
 //   2. Deletes all TellerLedger rows with this betId (clears FK Restrict).
 //   3. Deletes the Bet row (teller commission drops).
-//   4. Writes compensating ADJUSTMENT ledger rows so cash on hand only
-//      drops by the dashboard commission (stake × rate / 2) for the
-//      bet-taker — not by the full stake / payout swing.
+//   4. Writes compensating ADJUSTMENT ledger rows so every teller's cash
+//      on hand is unchanged by the purge.
 //   5. Does NOT change Fight.meronPool / walaPool / payout ratios.
 // ===========================================================================
 
@@ -767,7 +766,6 @@ export async function purgeBet(prisma, actor, betId) {
   const commission = computeCommissionDrop(existing.amount, existing.fight.commissionRate)
   const cashPlan = planPurgeCashAdjustments({
     betTellerId: existing.tellerId,
-    dashboardCommissionDrop: commission.dashboardCommissionDrop,
     ledgerRows: ledgerRows.map((r) => ({ tellerId: r.tellerId, amount: r.amount }))
   })
 
@@ -805,8 +803,8 @@ export async function purgeBet(prisma, actor, betId) {
               amount: row.adjustmentAmount,
               adjustedByUserId: actor.id,
               notes:
-                `Bet purge ${existing.code}: net cash to −${commission.dashboardCommissionDrop} ` +
-                `commission (stake ${existing.amount.toFixed(2)} removed from commission reports).`
+                `Bet purge ${existing.code}: cash on hand unchanged ` +
+                `(stake ${existing.amount.toFixed(2)} removed from commission reports).`
             }
           })
           adjustmentsWritten.push({
