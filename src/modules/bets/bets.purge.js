@@ -22,16 +22,15 @@ export function computeCommissionDrop(stake, commissionRate) {
 
 /**
  * After removing bet ledger rows, cash would change by −ledgerSum per teller.
- * For settled/paid sessions we only want the bet-taker's cash to drop by the
- * dashboard commission (tong), and every other teller's cash unchanged.
+ * Purge must leave every teller's cash on hand unchanged, so each affected
+ * teller gets a compensating ADJUSTMENT equal to the ledger sum removed.
  *
  * adjustment = desiredDelta − deltaFromDeletingLedger
- *            = desiredDelta − (−ledgerSum)
- *            = desiredDelta + ledgerSum
+ *            = 0 − (−ledgerSum)
+ *            = ledgerSum
  *
  * @param {object} args
- * @param {string} args.betTellerId  Teller who took the bet (commission attribution).
- * @param {string|number} args.dashboardCommissionDrop  Positive amount to remove from cash.
+ * @param {string} args.betTellerId  Teller who took the bet.
  * @param {Array<{ tellerId: string, amount: string|number }>} args.ledgerRows
  * @returns {Array<{
  *   tellerId: string,
@@ -42,12 +41,7 @@ export function computeCommissionDrop(stake, commissionRate) {
  *   cashOnHandDelta: string
  * }>}
  */
-export function planPurgeCashAdjustments({
-  betTellerId,
-  dashboardCommissionDrop,
-  ledgerRows
-}) {
-  const commission = Math.abs(Number(dashboardCommissionDrop))
+export function planPurgeCashAdjustments({ betTellerId, ledgerRows }) {
   const sums = new Map()
   for (const row of ledgerRows) {
     const prev = sums.get(row.tellerId) ?? 0
@@ -58,7 +52,7 @@ export function planPurgeCashAdjustments({
   return [...sums.entries()]
     .map(([tellerId, ledgerSum]) => {
       const deltaFromLedgerDelete = -ledgerSum
-      const desiredCashDelta = tellerId === betTellerId ? -commission : 0
+      const desiredCashDelta = 0
       const adjustmentAmount = desiredCashDelta - deltaFromLedgerDelete
       return {
         tellerId,

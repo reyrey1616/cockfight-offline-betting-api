@@ -248,7 +248,7 @@ export async function getBalance(prisma, actor, { tellerId } = {}) {
 // ===========================================================================
 // GET /cash/ledger — bearer.
 //
-// Cursor-paginated. Filters: tellerId, type, since, until.
+// Cursor-paginated. Filters: tellerId, type, fightId (via linked bet), since, until.
 // Tellers are HARD-SCOPED to their own entries: an explicit tellerId in
 // the query that doesn't match → 403. Omitting it defaults to own.
 // Admins can pass any tellerId or omit for system-wide view.
@@ -279,6 +279,7 @@ export async function listLedger(prisma, actor, query = {}) {
   const where = {
     ...(effectiveTellerFilter ? { tellerId: effectiveTellerFilter } : {}),
     ...(query.type ? { type: query.type } : {}),
+    ...(query.fightId ? { bet: { is: { fightId: query.fightId } } } : {}),
     ...(query.since || query.until
       ? {
           createdAt: {

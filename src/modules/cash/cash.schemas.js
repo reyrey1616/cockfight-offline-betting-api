@@ -179,6 +179,7 @@ export const cashLedgerQuerySchema = {
   properties: {
     tellerId: { type: 'string', pattern: cuidPattern, description: 'Filter by teller. Tellers can only pass their own id.' },
     type: { type: 'string', enum: LEDGER_TYPES, description: 'Filter by entry type.' },
+    fightId: { type: 'string', pattern: cuidPattern, description: 'Only entries linked to a bet on this fight.' },
     since: { type: 'string', format: 'date-time', description: 'Inclusive lower bound on createdAt.' },
     until: { type: 'string', format: 'date-time', description: 'Exclusive upper bound on createdAt.' },
     limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },

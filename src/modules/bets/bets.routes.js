@@ -402,13 +402,12 @@ export default async function betsRoutes(app) {
         description:
           'Admin-only. Hard-deletes a `PAID` bet on a `SETTLED` fight, ' +
           'along with every `TellerLedger` row referencing it, then writes ' +
-          'compensating `ADJUSTMENT` rows so cash on hand only drops by the ' +
-          'dashboard commission (`stake × rate / 2`) for the bet-taker.\n\n' +
+          'compensating `ADJUSTMENT` rows so no teller\'s cash on hand changes.\n\n' +
           '### What changes\n' +
           '- Teller commission reports drop by `stake × fight.commissionRate` ' +
-          '(dashboard display uses half of that).\n' +
-          '- Cash on hand for the bet-taker drops by that dashboard commission only.\n\n' +
+          '(dashboard display uses half of that).\n\n' +
           '### What does NOT change\n' +
+          '- Cash on hand for every teller (bet-taker and paying teller).\n' +
           '- `Fight.meronPool` / `walaPool` and frozen payout ratios.\n' +
           '- Other bets\' `payoutAmount`.\n\n' +
           'Broadcasts `TELLER_BALANCE_UPDATED` per affected teller and ' +

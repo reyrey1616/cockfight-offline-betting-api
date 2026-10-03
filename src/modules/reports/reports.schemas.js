@@ -118,7 +118,15 @@ const fightCommissionRowSchema = {
     status: { type: 'string' },
     outcome: { type: ['string', 'null'] },
     commissionRate: { type: 'string' },
-    grossHandle: { type: 'string', description: 'meronPool + walaPool at report time.' },
+    payoutRatioMeron: {
+      type: ['string', 'null'],
+      description: 'Frozen Meron payout multiplier at settle (null until settled).'
+    },
+    payoutRatioWala: {
+      type: ['string', 'null'],
+      description: 'Frozen Wala payout multiplier at settle (null until settled).'
+    },
+    grossHandle: { type: 'string', description: 'Sum of non-voided bet stakes on the fight.' },
     commission: {
       type: 'string',
       description: 'House commission (grossHandle × commissionRate; zero for cancelled / draw).'

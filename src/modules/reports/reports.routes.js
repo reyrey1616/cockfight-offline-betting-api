@@ -88,7 +88,8 @@ export default async function reportsRoutes(app) {
         tags,
         summary: 'Per-fight house commission (admin)',
         description:
-          'Admin-only. Returns one row per fight with gross handle (frozen pools) ' +
+          'Admin-only. Returns one row per fight with gross handle (sum of non-voided bets, ' +
+          'so admin bet purge lowers it) ' +
           'and house commission (grossHandle × snapshotted commissionRate; zero for cancelled / draw). ' +
           'Sorted by fight number descending.\n\n' +
           'SUM(fights[i].commission) should match realized commission for the session. ' +

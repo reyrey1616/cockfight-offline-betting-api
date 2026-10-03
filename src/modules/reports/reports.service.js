@@ -195,9 +195,13 @@ export async function getFightCommissions(prisma, rawQuery = {}) {
       f.status                                                          AS "status",
       f.outcome                                                         AS "outcome",
       f."commissionRate"                                                AS "commissionRate",
+      f."payoutRatioMeron"                                              AS "payoutRatioMeron",
+      f."payoutRatioWala"                                               AS "payoutRatioWala",
       f."settledAt"                                                     AS "settledAt",
       f."correctedAt"                                                   AS "correctedAt",
-      (f."meronPool" + f."walaPool")                                    AS "grossHandle",
+      -- Sum surviving bets, not Fight pools: admin bet purge deletes the Bet
+      -- row but leaves pools frozen, and must still lower fight commission.
+      COALESCE(SUM(b.amount) FILTER (WHERE b.status <> 'VOIDED'), 0)    AS "grossHandle",
       COUNT(b.id) FILTER (WHERE b.status <> 'VOIDED')::int              AS "betCount",
       COUNT(b.id) FILTER (WHERE b.status = 'PENDING')::int              AS "pendingBetCount"
     FROM "Fight" f
@@ -223,6 +227,8 @@ export async function getFightCommissions(prisma, rawQuery = {}) {
       status,
       outcome: outcome ?? null,
       commissionRate: String(r.commissionRate),
+      payoutRatioMeron: r.payoutRatioMeron != null ? String(r.payoutRatioMeron) : null,
+      payoutRatioWala: r.payoutRatioWala != null ? String(r.payoutRatioWala) : null,
       grossHandle,
       commission,
       betCount: r.betCount,
