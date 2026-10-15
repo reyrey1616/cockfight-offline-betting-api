@@ -3,6 +3,7 @@
 // Surface
 //   POST   /cash/advances           admin    record collector → teller cash handoff
 //   POST   /cash/remits             bearer   record teller → collector handback
+//   DELETE /cash/remits/{id}        super_admin  hard-delete a REMIT (cash on hand unchanged)
 //   GET    /cash/balance            bearer   running balance (own, or any if admin)
 //   GET    /cash/ledger             bearer   filterable ledger list (own, or any if admin)
 //   GET    /cash/ledger/code/{code} bearer   scan-by-barcode (own, or any if admin)
@@ -15,6 +16,7 @@
 import {
   cashAdvance,
   cashRemit,
+  deleteRemit,
   getBalance,
   getLedgerEntryByCode,
   listLedger,
@@ -28,8 +30,10 @@ import {
   cashLedgerCodeParamsSchema,
   cashLedgerQuerySchema,
   cashLedgerResponseSchema,
+  cashRemitIdParamsSchema,
   cashRemitRequestSchema,
   cashRemitResponseSchema,
+  deleteRemitResponseSchema,
   getLedgerEntryByCodeResponseSchema
 } from './cash.schemas.js'
 import { buildTellerBalanceUpdatedPayload } from './cash.events.js'
@@ -151,6 +155,51 @@ export default async function cashRoutes(app) {
         ledgerEntry: projectLedgerEntry(ledgerEntry),
         actorBalance: balance
       }
+    }
+  )
+
+  // -------------------------------------------------------------------------
+  // DELETE /cash/remits/:id
+  // -------------------------------------------------------------------------
+  app.delete(
+    '/remits/:id',
+    {
+      preHandler: [app.authenticate, app.requireRole('ADMIN'), app.requireSuperAdmin],
+      schema: {
+        tags,
+        summary: 'Permanently delete a teller remit (super_admin only)',
+        description:
+          'Hard-deletes a `REMIT` ledger row. Other ledger types are rejected with 400.\n\n' +
+          'In the same transaction, writes an offsetting `ADJUSTMENT` row on the same ' +
+          'teller with the same signed amount, so the teller\'s cash on hand is unchanged.\n\n' +
+          'Broadcasts `TELLER_BALANCE_UPDATED` after commit.',
+        operationId: 'cashDeleteRemit',
+        security,
+        params: cashRemitIdParamsSchema,
+        response: {
+          ...deleteRemitResponseSchema,
+          400: errorResponses[400],
+          401: errorResponses[401],
+          403: errorResponses[403],
+          404: errorResponses[404],
+          408: errorResponses[408],
+          500: errorResponses[500]
+        }
+      }
+    },
+    async (request) => {
+      const { deleted, balance, teller } = await deleteRemit(
+        request.server.prisma,
+        request.user,
+        request.params.id
+      )
+      app.broadcast(buildTellerBalanceUpdatedPayload({
+        tellerId: deleted.tellerId,
+        tellerName: teller?.fullName ?? deleted.tellerId,
+        balance,
+        delta: { type: 'ADJUSTMENT', amount: '0.00' }
+      }))
+      return { deleted: projectLedgerEntry(deleted) }
     }
   )
 

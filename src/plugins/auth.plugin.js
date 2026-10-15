@@ -18,6 +18,7 @@
 import fp from 'fastify-plugin'
 import jwt from '@fastify/jwt'
 import { ForbiddenError, UnauthorizedError } from '../lib/errors.js'
+import { isSuperAdmin } from '../lib/super-admin.js'
 
 async function authPlugin(app) {
   if (!process.env.JWT_SECRET) {
@@ -72,6 +73,15 @@ async function authPlugin(app) {
           `Requires one of: ${allowedRoles.join(', ')}`
         )
       }
+    }
+  })
+
+  // Restricts a route to the fixed `super_admin` account. Compose AFTER
+  // `authenticate` (and typically `requireRole('ADMIN')`).
+  app.decorate('requireSuperAdmin', async function requireSuperAdmin(request) {
+    if (!request.user) throw new UnauthorizedError('Authentication required')
+    if (!isSuperAdmin(request.user)) {
+      throw new ForbiddenError('Requires the super_admin account')
     }
   })
 }

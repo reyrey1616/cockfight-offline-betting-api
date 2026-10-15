@@ -141,6 +141,27 @@ export const cashRemitResponseSchema = {
 }
 
 // ---------------------------------------------------------------------------
+// DELETE /cash/remits/:id
+// ---------------------------------------------------------------------------
+
+export const cashRemitIdParamsSchema = {
+  type: 'object',
+  required: ['id'],
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', pattern: cuidPattern, description: 'TellerLedger id of a REMIT row.' }
+  }
+}
+
+export const deleteRemitResponseSchema = {
+  200: {
+    type: 'object',
+    required: ['deleted'],
+    properties: { deleted: ledgerEntrySchema }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // GET /cash/balance
 // ---------------------------------------------------------------------------
 

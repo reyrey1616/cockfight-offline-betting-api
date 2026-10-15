@@ -28,6 +28,7 @@ import {
 import { computeTellerBalance } from '../../lib/teller-balance.js'
 import { generateUniqueCode } from '../../lib/code-generator.js'
 import { rethrowPrismaTransactionError } from '../../lib/prisma-tx.js'
+import { isSuperAdmin } from '../../lib/super-admin.js'
 import { getCollectorByCode } from '../collectors/collectors.service.js'
 import { negate, resolveAdvanceRecipientId, toMoneyString } from './cash.helpers.js'
 
@@ -212,6 +213,58 @@ export async function cashRemit(prisma, actor, { collectorCode, amount, notes })
     balance: result.balance,
     teller: actorRow
   }
+}
+
+// ===========================================================================
+// DELETE /cash/remits/:id — super_admin only.
+//
+// Hard-deletes a REMIT ledger row and, in the same transaction, writes an
+// offsetting ADJUSTMENT with the same signed amount on the same teller so
+// the teller's SUM(amount) balance is unchanged.
+// ===========================================================================
+
+export async function deleteRemit(prisma, actor, ledgerId) {
+  if (!isSuperAdmin(actor)) {
+    throw new ForbiddenError('Only super_admin may delete remits')
+  }
+
+  let result
+  try {
+    result = await prisma.$transaction(async (tx) => {
+      const row = await tx.tellerLedger.findUnique({
+        where: { id: ledgerId },
+        include: { collector: { select: { name: true } } }
+      })
+      if (!row) throw new NotFoundError('Ledger entry not found')
+      if (row.type !== 'REMIT') {
+        throw new BadRequestError('Only REMIT ledger entries can be deleted here', {
+          ledgerType: row.type
+        })
+      }
+
+      await tx.tellerLedger.delete({ where: { id: row.id } })
+      const adjustment = await tx.tellerLedger.create({
+        data: {
+          tellerId: row.tellerId,
+          type: 'ADJUSTMENT',
+          amount: row.amount.toFixed(2),
+          adjustedByUserId: actor.id,
+          notes: `Remit ${row.code ?? row.id} deleted by ${actor.username}`
+        }
+      })
+
+      const teller = await tx.user.findUnique({
+        where: { id: row.tellerId },
+        select: { id: true, fullName: true }
+      })
+      const balance = await computeTellerBalance(tx, row.tellerId)
+      return { deleted: row, adjustment, balance, teller }
+    }, { timeout: TX_TIMEOUT_MS, maxWait: TX_MAX_WAIT_MS })
+  } catch (err) {
+    rethrowPrismaTransactionError(err)
+  }
+
+  return result
 }
 
 // ===========================================================================

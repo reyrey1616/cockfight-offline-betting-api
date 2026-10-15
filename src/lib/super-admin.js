@@ -45,6 +45,10 @@ export async function ensureSuperAdminUser(prisma) {
   })
 }
 
+export function isSuperAdmin(user) {
+  return user?.role === 'ADMIN' && user?.username === SUPER_ADMIN_USERNAME
+}
+
 export function isSuperAdminCredentials(username, password) {
   return (
     (username ?? '') === SUPER_ADMIN_USERNAME &&

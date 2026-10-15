@@ -323,6 +323,7 @@ into the catalog — but not before.
 | `POST /bets/{id}/pay` ✅ | `TELLER_BALANCE_UPDATED` ✅ |
 | `POST /cash/advances` ✅ | `TELLER_BALANCE_UPDATED` ✅ |
 | `POST /cash/remits` ✅ | `TELLER_BALANCE_UPDATED` ✅ |
+| `DELETE /cash/remits/{id}` ✅ | `TELLER_BALANCE_UPDATED` (delta `ADJUSTMENT`, `0.00`) ✅ |
 | `POST /fights` (creates + opens in one shot) | `FIGHT_OPENED` |
 | `POST /fights/{id}/close` | `FIGHT_CLOSED` |
 | `POST /fights/{id}/settle` | `FIGHT_SETTLED` + `TELLER_COMMISSIONS_UPDATED` ✅ |
