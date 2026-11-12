@@ -20,7 +20,7 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 10_000
 export const SYNC_TABLES = [
   {
     name: 'Setting',
-    columns: ['id', 'commissionRate', 'updatedAt']
+    columns: ['id', 'commissionRate', 'showUnpaidWinningTickets', 'updatedAt']
   },
   {
     name: 'Collector',
@@ -84,6 +84,7 @@ export const SYNC_TABLES = [
       'amount',
       'side',
       'status',
+      'showOnDashboard',
       'payoutAmount',
       'paidAt',
       'paidByUserId',

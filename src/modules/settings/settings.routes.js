@@ -37,10 +37,8 @@ export default async function settingsRoutes(app) {
         tags,
         summary: 'Read the current system settings',
         description:
-          'Returns the singleton `Setting` row. The only field today is ' +
-          '`commissionRate`. Available to any authenticated user — tellers ' +
-          'need to display the current rate, admins need it to set up ' +
-          'the next adjustment.',
+          'Returns the singleton `Setting` row. Available to any authenticated ' +
+          'user — tellers need the current commission rate.',
         operationId: 'settingsGet',
         security,
         response: {

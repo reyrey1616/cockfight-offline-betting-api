@@ -10,7 +10,7 @@
 
 const settingSchema = {
   type: 'object',
-  required: ['id', 'commissionRate', 'updatedAt'],
+  required: ['id', 'commissionRate', 'showUnpaidWinningTickets', 'updatedAt'],
   properties: {
     id: { type: 'string', enum: ['singleton'], description: 'Always the literal "singleton" — this is a single-row table.' },
     commissionRate: {
@@ -19,6 +19,11 @@ const settingSchema = {
         'House commission ("tong") as a decimal fraction (e.g. "0.1000" = 10%). ' +
         'Snapshotted onto each Fight at creation time; changes here only affect ' +
         'fights created AFTER the change.'
+    },
+    showUnpaidWinningTickets: {
+      type: 'boolean',
+      description:
+        'Retained setting. The admin dashboard unpaid table is controlled per ticket via Bet.showOnDashboard.'
     },
     updatedAt: { type: 'string', format: 'date-time' }
   }

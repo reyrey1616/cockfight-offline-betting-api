@@ -7,6 +7,7 @@
 //   GET    /bets/code/{code}  single bet by public ticket code (any auth)
 //   POST   /bets/{id}/void    void a PENDING bet while its fight is OPEN
 //   POST   /bets/{id}/pay     pay out WON or pending-refund bet (any auth — cashier window)
+//   PATCH  /bets/{id}/dashboard-visibility  super_admin  show or hide one unpaid ticket
 //
 // Errors are mapped by the global error-handler plugin:
 //   NotFound → 404, Forbidden → 403, Conflict → 409,
@@ -19,6 +20,7 @@ import {
   payBet,
   placeBet,
   purgeBet,
+  setBetDashboardVisibility,
   voidBet
 } from './bets.service.js'
 import {
@@ -29,6 +31,8 @@ import {
   listBetsResponseSchema,
   payBetResponseSchema,
   placeBetRequestSchema,
+  setDashboardVisibilityRequestSchema,
+  setDashboardVisibilityResponseSchema,
   placeBetResponseSchema,
   purgeBetResponseSchema,
   voidBetRequestSchema,
@@ -385,6 +389,53 @@ export default async function betsRoutes(app) {
         fight: result.fight,
         replay: result.replay,
         actorBalance: result.actorBalance
+      }
+    }
+  )
+
+  // -------------------------------------------------------------------------
+  // PATCH /bets/:id/dashboard-visibility — one unpaid ticket on the dashboard
+  // -------------------------------------------------------------------------
+  app.patch(
+    '/:id/dashboard-visibility',
+    {
+      preHandler: [app.authenticate, app.requireRole('ADMIN'), app.requireSuperAdmin],
+      schema: {
+        tags,
+        summary: 'Show or hide one unpaid ticket on the admin dashboard',
+        description:
+          'Super-admin only. Sets `Bet.showOnDashboard` for a single `WON` or ' +
+          '`PENDING_REFUND` ticket. Other statuses return 409.\n\n' +
+          'The admin dashboard unpaid table requests `showOnDashboard=true`. ' +
+          'Payout by ticket code, cash, and other bet lists are unchanged.',
+        operationId: 'betsSetDashboardVisibility',
+        security,
+        params: betIdParamsSchema,
+        body: setDashboardVisibilityRequestSchema,
+        response: {
+          ...setDashboardVisibilityResponseSchema,
+          400: errorResponses[400],
+          401: errorResponses[401],
+          403: errorResponses[403],
+          404: errorResponses[404],
+          409: errorResponses[409],
+          500: errorResponses[500]
+        }
+      }
+    },
+    async (request) => {
+      const bet = await setBetDashboardVisibility(
+        request.server.prisma,
+        request.params.id,
+        request.body.show
+      )
+      return {
+        bet: {
+          id: bet.id,
+          code: bet.code,
+          status: bet.status,
+          showOnDashboard: bet.showOnDashboard
+        }
       }
     }
   )

@@ -39,6 +39,10 @@ model Bet {
   side   BetSide
   status BetStatus @default(PENDING)
 
+  // Super-admin chooses whether this unpaid ticket appears on the admin
+  // dashboard. Does not affect payout, void, or other bet lists.
+  showOnDashboard Boolean @default(true)
+
   // Calculated and frozen at fight settlement. NULL for losing, voided,
   // refunded, or still-pending bets.
   payoutAmount Decimal? @db.Decimal(14, 2)

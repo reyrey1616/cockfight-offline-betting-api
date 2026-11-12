@@ -7,7 +7,7 @@
 //
 // Audit trail: every successful change is logged at the request layer
 // (see settings.routes.js) with the actor's user id and the before/after
-// values. A dedicated SettingHistory table is overkill for one field;
+// values. A dedicated SettingHistory table is overkill for these fields;
 // promote to one only if multi-field audit is ever required.
 
 import { InvariantError, NotFoundError } from '../../lib/errors.js'

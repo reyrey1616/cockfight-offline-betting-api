@@ -32,6 +32,12 @@ const betSchema = {
     amount: { type: 'string', description: 'Decimal as string (e.g. "500.00").' },
     side: { type: 'string', enum: ['MERON', 'WALA'] },
     status: { type: 'string', enum: ['PENDING', 'WON', 'LOST', 'PAID', 'VOIDED', 'PENDING_REFUND', 'REFUNDED'] },
+    showOnDashboard: {
+      type: 'boolean',
+      description:
+        'When false, this ticket is omitted from the admin dashboard unpaid table. ' +
+        'Payout and other lists are unchanged.'
+    },
     payoutAmount: { type: ['string', 'null'], description: 'Frozen at settlement. Null for losing / voided / refunded / still-pending bets.' },
     paidAt: { type: ['string', 'null'], format: 'date-time' },
     paidByUserId: { type: ['string', 'null'] },
@@ -149,6 +155,10 @@ export const listBetsQuerySchema = {
     },
     side: { type: 'string', enum: ['MERON', 'WALA'] },
     since: { type: 'string', format: 'date-time', description: 'Only bets created at or after this timestamp.' },
+    showOnDashboard: {
+      type: 'boolean',
+      description: 'When set, only bets with this dashboard visibility are returned.'
+    },
     limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
     cursor: { type: 'string', description: 'Opaque cursor — pass the `nextCursor` from the previous response.' }
   }
@@ -216,6 +226,37 @@ export const betIdParamsSchema = {
   required: ['id'],
   additionalProperties: false,
   properties: { id: { type: 'string', pattern: cuidPattern } }
+}
+
+export const setDashboardVisibilityRequestSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['show'],
+  properties: {
+    show: {
+      type: 'boolean',
+      description: 'True shows this ticket on the admin dashboard unpaid table.'
+    }
+  }
+}
+
+export const setDashboardVisibilityResponseSchema = {
+  200: {
+    type: 'object',
+    required: ['bet'],
+    properties: {
+      bet: {
+        type: 'object',
+        required: ['id', 'code', 'status', 'showOnDashboard'],
+        properties: {
+          id: { type: 'string' },
+          code: { type: 'string' },
+          status: { type: 'string' },
+          showOnDashboard: { type: 'boolean' }
+        }
+      }
+    }
+  }
 }
 
 export const betDetailResponseSchema = {

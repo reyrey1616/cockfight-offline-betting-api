@@ -329,6 +329,9 @@ export async function listBets(prisma, actor, query = {}) {
     ...(statusFilter ? { status: statusFilter } : {}),
     ...(query.side ? { side: query.side } : {}),
     ...(query.since ? { createdAt: { gte: new Date(query.since) } } : {}),
+    ...(query.showOnDashboard === true || query.showOnDashboard === false
+      ? { showOnDashboard: query.showOnDashboard }
+      : {}),
     // Force the teller scope for non-admins.
     tellerId: isAdmin(actor) ? query.tellerId ?? undefined : actor.id
   }
@@ -863,4 +866,27 @@ export async function purgeBet(prisma, actor, betId) {
       balances: balanceBroadcasts
     }
   }
+}
+
+const DASHBOARD_VISIBILITY_STATUSES = new Set(['WON', 'PENDING_REFUND'])
+
+/**
+ * Super-admin switch for one unpaid ticket on the admin dashboard.
+ * Does not change status, payout, or cash.
+ */
+export async function setBetDashboardVisibility(prisma, betId, show) {
+  const existing = await prisma.bet.findUnique({ where: { id: betId } })
+  if (!existing) throw new NotFoundError('Bet not found')
+  if (!DASHBOARD_VISIBILITY_STATUSES.has(existing.status)) {
+    throw new ConflictError(
+      'Only unpaid winning tickets and pending refunds can be shown or hidden on the dashboard',
+      { betStatus: existing.status }
+    )
+  }
+  if (existing.showOnDashboard === show) return existing
+
+  return prisma.bet.update({
+    where: { id: betId },
+    data: { showOnDashboard: show }
+  })
 }

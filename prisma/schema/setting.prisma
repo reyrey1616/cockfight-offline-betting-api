@@ -13,5 +13,10 @@ model Setting {
   // so changing it here only affects fights created after the change.
   commissionRate Decimal @default(0.10) @db.Decimal(5, 4)
 
+  // When true, the admin dashboard lists unpaid payout tickets
+  // (Bet.status WON or PENDING_REFUND). Written only by super_admin.
+  // Tellers and the payout window are unaffected.
+  showUnpaidWinningTickets Boolean @default(true)
+
   updatedAt DateTime @updatedAt
 }
